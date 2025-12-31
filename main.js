@@ -8,7 +8,7 @@ const main = async () => {
   const buffer = await response.arrayBuffer();
   const module = await WebAssembly.compile(buffer);
   const { vm } = await DefaultRubyVM(module);
-  
+
   window.rubyVM = vm; // For debugging
   console.log("Ruby VM loaded");
 
@@ -29,10 +29,10 @@ const main = async () => {
         return;
     }
     const scriptText = await scriptRes.text();
-    
+
     // Evaluate the script
     vm.eval(scriptText);
-    
+
     // Invoke the demo function defined in Ruby
     try {
         vm.eval("play_demo");
