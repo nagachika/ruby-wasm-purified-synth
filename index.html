@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Ruby/WASM Web Synth</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; padding: 50px; background: #f0f4f8; }
+    button { padding: 15px 30px; font-size: 1.2rem; cursor: pointer; border-radius: 8px; border: none; background: #007bff; color: white; }
+    button:disabled { background: #ccc; }
+  </style>
+  <script type="importmap">
+    {
+      "imports": {
+        "@bjorn3/browser_wasi_shim": "https://cdn.jsdelivr.net/npm/@bjorn3/browser_wasi_shim@0.3.0/dist/index.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <h1>Ruby/WASM Web Synth</h1>
+  <button id="start-btn">Initialize & Play</button>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>

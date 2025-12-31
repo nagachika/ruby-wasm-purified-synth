@@ -1,0 +1,16 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    rake (13.3.1)
+    webrick (1.9.2)
+
+PLATFORMS
+  ruby
+  x86_64-darwin-24
+
+DEPENDENCIES
+  rake
+  webrick
+
+BUNDLED WITH
+   2.5.22
