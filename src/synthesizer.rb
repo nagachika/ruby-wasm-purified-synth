@@ -95,19 +95,83 @@ class Synthesizer
   attr_accessor :attack, :decay, :sustain, :release # ADSR
   attr_accessor :lfo_on, :lfo_waveform, :lfo_rate, :lfo_depth
 
+  # Effect Parameters
+  attr_accessor :delay_time, :delay_feedback, :delay_mix
+  attr_accessor :reverb_seconds, :reverb_mix
+
   attr_reader :master_gain, :analyser_node
 
   def initialize(ctx)
     @ctx = ctx
 
-    # --- Master Output & Analysis ---
+    # --- Master Output ---
     @master_gain = @ctx.call(:createGain)
     @master_gain[:gain][:value] = 0.5
 
+    # --- Delay Effect ---
+    @delay_node = @ctx.call(:createDelay)
+    @delay_feedback_gain = @ctx.call(:createGain)
+    @delay_wet_gain = @ctx.call(:createGain)
+    @delay_dry_gain = @ctx.call(:createGain)
+    @delay_output = @ctx.call(:createGain) # Combine Wet/Dry
+
+    # --- Reverb Effect ---
+    @convolver = @ctx.call(:createConvolver)
+    @reverb_wet_gain = @ctx.call(:createGain)
+    @reverb_dry_gain = @ctx.call(:createGain)
+    @reverb_output = @ctx.call(:createGain) # Combine Wet/Dry
+
+    # Defaults
+    @delay_time = 0.3
+    @delay_feedback = 0.4
+    @delay_mix = 0.3 
+
+    @reverb_seconds = 2.0
+    @reverb_mix = 0.3
+
+    # Setup Delay Nodes
+    @delay_node[:delayTime][:value] = @delay_time
+    @delay_feedback_gain[:gain][:value] = @delay_feedback
+    @delay_wet_gain[:gain][:value] = @delay_mix
+    @delay_dry_gain[:gain][:value] = 1.0 - @delay_mix
+
+    # Setup Reverb IR
+    update_reverb_buffer
+
+    @reverb_wet_gain[:gain][:value] = @reverb_mix
+    @reverb_dry_gain[:gain][:value] = 1.0 - @reverb_mix
+
+    # --- Routing Chain ---
+    
+    # 1. Delay Block
+    # Input: @master_gain
+    @master_gain.connect(@delay_node)
+    @master_gain.connect(@delay_dry_gain)
+
+    # Feedback Loop
+    @delay_node.connect(@delay_feedback_gain)
+    @delay_feedback_gain.connect(@delay_node)
+
+    # Output Mixing
+    @delay_node.connect(@delay_wet_gain)
+    @delay_wet_gain.connect(@delay_output)
+    @delay_dry_gain.connect(@delay_output)
+
+    # 2. Reverb Block
+    # Input: @delay_output
+    @delay_output.connect(@convolver)
+    @delay_output.connect(@reverb_dry_gain)
+
+    # Output Mixing
+    @convolver.connect(@reverb_wet_gain)
+    @reverb_wet_gain.connect(@reverb_output)
+    @reverb_dry_gain.connect(@reverb_output)
+
+    # 3. Final Analysis & Output
     @analyser_node = @ctx.call(:createAnalyser)
     @analyser_node[:fftSize] = 2048
 
-    @master_gain.connect(@analyser_node)
+    @reverb_output.connect(@analyser_node)
     @analyser_node.connect(@ctx[:destination])
 
     # Default presets
@@ -127,6 +191,63 @@ class Synthesizer
     @lfo_depth = 500.0
 
     @active_voices = {}
+  end
+
+  # Custom setters to update audio nodes immediately
+  def delay_time=(val)
+    @delay_time = val.to_f
+    @delay_node[:delayTime][:value] = @delay_time
+  end
+
+  def delay_feedback=(val)
+    @delay_feedback = val.to_f
+    @delay_feedback_gain[:gain][:value] = @delay_feedback
+  end
+
+  def delay_mix=(val)
+    @delay_mix = val.to_f
+    # Constant power panning or linear crossfade
+    @delay_wet_gain[:gain][:value] = @delay_mix
+    @delay_dry_gain[:gain][:value] = 1.0 - @delay_mix
+  end
+
+  def reverb_seconds=(val)
+    @reverb_seconds = val.to_f
+    update_reverb_buffer
+  end
+
+  def reverb_mix=(val)
+    @reverb_mix = val.to_f
+    @reverb_wet_gain[:gain][:value] = @reverb_mix
+    @reverb_dry_gain[:gain][:value] = 1.0 - @reverb_mix
+  end
+
+  def update_reverb_buffer
+    rate = @ctx[:sampleRate].to_f
+    length = (rate * @reverb_seconds).to_i
+
+    # Generate impulse response buffer using JavaScript for performance.
+    # Ruby loops over large arrays can be slow when crossing the WASM boundary frequently.
+    JS.eval(<<~JAVASCRIPT)
+      const ctx = window.audioCtx;
+      const length = #{length};
+      const seconds = #{@reverb_seconds};
+      const decay = 2.0;
+      const buffer = ctx.createBuffer(2, length, ctx.sampleRate);
+      
+      for (let c = 0; c < 2; c++) {
+        const channelData = buffer.getChannelData(c);
+        for (let i = 0; i < length; i++) {
+          // Simple exponential decay noise
+          channelData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay);
+        }
+      }
+      // Store it temporarily to retrieve
+      window._tempReverbBuffer = buffer;
+    JAVASCRIPT
+
+    # Assign the buffer from the temporary JS global
+    @convolver[:buffer] = JS.global[:_tempReverbBuffer]
   end
 
   def note_on(note_number)

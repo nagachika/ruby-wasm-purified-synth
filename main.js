@@ -7,7 +7,9 @@ const overlay = document.getElementById("start-overlay");
 const uiIds = [
   "osc_type", "filter_type", "cutoff", "resonance",
   "attack", "decay", "sustain", "release",
-  "lfo_on", "lfo_waveform", "lfo_rate", "lfo_depth"
+  "lfo_on", "lfo_waveform", "lfo_rate", "lfo_depth",
+  "delay_time", "delay_feedback", "delay_mix",
+  "reverb_seconds", "reverb_mix"
 ];
 
 const keyMap = {
@@ -167,7 +169,7 @@ function setupUI(vm) {
       if (display) {
         let val = el.value;
         if (id === 'cutoff') val += ' Hz';
-        if (id === 'attack' || id === 'decay' || id === 'release') val += ' s';
+        if (id === 'attack' || id === 'decay' || id === 'release' || id === 'delay_time' || id === 'reverb_seconds') val += ' s';
         if (id === 'lfo_rate') val += ' Hz';
         display.textContent = val;
       }

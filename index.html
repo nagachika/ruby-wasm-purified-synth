@@ -129,6 +129,36 @@
         <input type="range" id="lfo_depth" min="0" max="2000" step="10" value="500">
       </div>
     </div>
+
+    <!-- Effects -->
+    <div class="panel">
+      <h2>Delay Effect</h2>
+      <div class="control-group">
+        <label>Time <span id="val_delay_time" class="value-display">0.3 s</span></label>
+        <input type="range" id="delay_time" min="0" max="1.0" step="0.01" value="0.3">
+      </div>
+      <div class="control-group">
+        <label>Feedback <span id="val_delay_feedback" class="value-display">0.4</span></label>
+        <input type="range" id="delay_feedback" min="0" max="0.95" step="0.01" value="0.4">
+      </div>
+      <div class="control-group">
+        <label>Mix <span id="val_delay_mix" class="value-display">0.3</span></label>
+        <input type="range" id="delay_mix" min="0" max="1.0" step="0.01" value="0.3">
+      </div>
+    </div>
+
+    <!-- Reverb Effect -->
+    <div class="panel">
+      <h2>Reverb Effect</h2>
+      <div class="control-group">
+        <label>Seconds <span id="val_reverb_seconds" class="value-display">2.0 s</span></label>
+        <input type="range" id="reverb_seconds" min="0.1" max="5.0" step="0.1" value="2.0">
+      </div>
+      <div class="control-group">
+        <label>Mix <span id="val_reverb_mix" class="value-display">0.3</span></label>
+        <input type="range" id="reverb_mix" min="0" max="1.0" step="0.01" value="0.3">
+      </div>
+    </div>
     
     <div class="keyboard-hint">
       <p>Use your keyboard to play: <strong>Z X C V B N M</strong> etc.</p>
