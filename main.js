@@ -79,8 +79,80 @@ const main = async () => {
 
     setupUI(vm);
     setupKeyboard(vm);
+    setupVisualizer(vm);
   };
 };
+
+function setupVisualizer(vm) {
+  const canvas = document.getElementById("visualizer");
+  const canvasCtx = canvas.getContext("2d");
+  
+  // Retrieve AnalyserNode from Ruby object
+  // Since we expose attr_reader :analyser_node, we can access it.
+  // Note: Returned value from Ruby eval of a JS::Object wrapper is the JS object itself when crossing boundary back to JS?
+  // Actually, via vm.eval(), we get a JsValue. 
+  // Let's rely on global JS access or helper.
+  // Easiest way: Let Ruby assign it to a global JS variable.
+  vm.eval("JS.global[:synthAnalyser] = $synth.analyser_node");
+  const analyser = window.synthAnalyser;
+
+  if (!analyser) {
+    console.error("Analyser node not found");
+    return;
+  }
+
+  const bufferLength = analyser.frequencyBinCount;
+  const dataArray = new Uint8Array(bufferLength);
+  let vizMode = "waveform";
+
+  document.querySelectorAll('input[name="viz_mode"]').forEach(radio => {
+    radio.addEventListener('change', (e) => {
+      vizMode = e.target.value;
+    });
+  });
+
+  function draw() {
+    requestAnimationFrame(draw);
+
+    canvasCtx.fillStyle = "rgb(20, 20, 20)";
+    canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+    canvasCtx.lineWidth = 2;
+    canvasCtx.strokeStyle = "rgb(77, 171, 247)";
+    canvasCtx.fillStyle = "rgb(77, 171, 247)";
+
+    if (vizMode === "waveform") {
+      analyser.getByteTimeDomainData(dataArray);
+      canvasCtx.beginPath();
+      const sliceWidth = canvas.width * 1.0 / bufferLength;
+      let x = 0;
+
+      for (let i = 0; i < bufferLength; i++) {
+        const v = dataArray[i] / 128.0;
+        const y = v * canvas.height / 2;
+
+        if (i === 0) canvasCtx.moveTo(x, y);
+        else canvasCtx.lineTo(x, y);
+
+        x += sliceWidth;
+      }
+      canvasCtx.lineTo(canvas.width, canvas.height / 2);
+      canvasCtx.stroke();
+    } else {
+      analyser.getByteFrequencyData(dataArray);
+      const barWidth = (canvas.width / bufferLength) * 2.5;
+      let barHeight;
+      let x = 0;
+
+      for (let i = 0; i < bufferLength; i++) {
+        barHeight = dataArray[i] / 255.0 * canvas.height;
+        canvasCtx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+        x += barWidth + 1;
+      }
+    }
+  }
+
+  draw();
+}
 
 function setupUI(vm) {
   uiIds.forEach(id => {

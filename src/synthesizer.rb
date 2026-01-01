@@ -35,10 +35,10 @@ class Voice
       @lfo.start(@now)
     end
 
-    # Connections: VCO -> VCF -> VCA -> Destination
+    # Connections: VCO -> VCF -> VCA -> Master Gain
     @vco.connect(@vcf)
     @vcf.connect(@vca)
-    @vca.connect(@ctx[:destination])
+    @vca.connect(@params.master_gain)
   end
 
   def start
@@ -95,12 +95,23 @@ class Synthesizer
   attr_accessor :attack, :decay, :sustain, :release # ADSR
   attr_accessor :lfo_on, :lfo_waveform, :lfo_rate, :lfo_depth
 
+  attr_reader :master_gain, :analyser_node
+
   def initialize(ctx)
     @ctx = ctx
 
+    # --- Master Output & Analysis ---
+    @master_gain = @ctx.call(:createGain)
+    @master_gain[:gain][:value] = 0.5
+
+    @analyser_node = @ctx.call(:createAnalyser)
+    @analyser_node[:fftSize] = 2048
+
+    @master_gain.connect(@analyser_node)
+    @analyser_node.connect(@ctx[:destination])
+
     # Default presets
     @osc_type = "sawtooth"
-
     @filter_type = "lowpass"
     @cutoff = 2000.0
     @resonance = 5.0
