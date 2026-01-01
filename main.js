@@ -38,8 +38,6 @@ const keyMap = {
   'u': 83
 };
 
-let activeNote = null;
-
 const main = async () => {
   // Pre-load Ruby VM
   const response = await fetch("https://cdn.jsdelivr.net/npm/@ruby/3.3-wasm-wasi@2.7.1/dist/ruby.wasm");
@@ -140,7 +138,6 @@ function setupKeyboard(vm) {
     if (e.repeat) return;
     const note = keyMap[e.key];
     if (note) {
-      activeNote = note;
       vm.eval(`$synth.note_on(${note})`);
       
       // Visual feedback?
@@ -149,9 +146,8 @@ function setupKeyboard(vm) {
 
   window.addEventListener("keyup", (e) => {
     const note = keyMap[e.key];
-    if (note && note === activeNote) {
-      vm.eval(`$synth.note_off`);
-      activeNote = null;
+    if (note) {
+      vm.eval(`$synth.note_off(${note})`);
     }
   });
 }

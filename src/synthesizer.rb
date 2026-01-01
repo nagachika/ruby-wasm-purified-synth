@@ -115,7 +115,7 @@ class Synthesizer
     @lfo_rate = 5.0
     @lfo_depth = 500.0
 
-    @active_voice = nil
+    @active_voices = {}
   end
 
   def note_on(note_number)
@@ -125,16 +125,23 @@ class Synthesizer
       @ctx.call(:resume)
     end
 
-    @active_voice&.stop
+    # Stop existing voice for this note if any
+    if @active_voices[note_number]
+      @active_voices[note_number].stop
+    end
 
     freq = 440.0 * (2.0 ** ((note_number - 69) / 12.0))
 
-    @active_voice = Voice.new(@ctx, freq, self)
-    @active_voice.start
+    voice = Voice.new(@ctx, freq, self)
+    @active_voices[note_number] = voice
+    voice.start
   end
 
-  def note_off
-    @active_voice&.stop
-    @active_voice = nil
+  def note_off(note_number)
+    voice = @active_voices[note_number]
+    if voice
+      voice.stop
+      @active_voices.delete(note_number)
+    end
   end
 end
