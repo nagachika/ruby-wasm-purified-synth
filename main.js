@@ -69,7 +69,7 @@ const main = async () => {
     }
     const scriptText = await scriptRes.text();
     vm.eval(scriptText);
-    
+
     // Load Sequencer script
     const seqRes = await fetch(`src/sequencer.rb?_=${Date.now()}`);
     if (seqRes.ok) {
@@ -82,7 +82,7 @@ const main = async () => {
     // Instantiate Synthesizer
     vm.eval("$synth = Synthesizer.new(JS.eval('return window.audioCtx;'))");
     console.log("Synthesizer initialized");
-    
+
     // Instantiate Sequencer
     vm.eval("$sequencer = Sequencer.new($synth, JS.eval('return window.audioCtx;'))");
 
@@ -115,7 +115,7 @@ function setupSequencer(vm) {
   const bpmInput = document.getElementById("bpm");
   const bpmDisplay = document.getElementById("val_bpm");
   const rootFreqInput = document.getElementById("root_freq");
-  
+
   // Modal Elements
   const modal = document.getElementById("grid-modal");
   const closeModal = document.getElementById("close-modal");
@@ -135,11 +135,11 @@ function setupSequencer(vm) {
     stepBtn.style.cursor = "pointer";
     stepBtn.style.border = "2px solid #555";
     stepBtn.dataset.index = i;
-    
+
     stepBtn.onclick = () => {
       openEditor(i);
     };
-    
+
     grid.appendChild(stepBtn);
   }
 
@@ -185,12 +185,12 @@ function setupSequencer(vm) {
   closeModal.onclick = () => {
     modal.style.display = "none";
     currentEditingStep = null;
-    
+
     // Update step visual status (active if has notes)
     // We should do this on modal close to refresh the grid color
     updateGridVisuals();
   };
-  
+
   function updateGridVisuals() {
     for (let i = 0; i < 16; i++) {
       const stepBtn = grid.children[i];
@@ -210,23 +210,23 @@ function setupSequencer(vm) {
     currentEditingStep = stepIndex;
     modalStepNum.textContent = stepIndex + 1;
     modal.style.display = "flex";
-    
+
     try {
       const currentDim = vm.eval("$sequencer.y_axis_dim").toString();
       yAxisSelect.value = currentDim;
     } catch(e) {}
-    
+
     renderLattice(stepIndex);
   }
 
   function renderLattice(stepIndex) {
     latticeGrid.innerHTML = "";
-    
+
     try {
       const json = vm.eval(`$sequencer.get_step_notes_json(${stepIndex})`).toString();
       currentStepNotes = JSON.parse(json);
     } catch(e) { console.error(e); return; }
-    
+
     const currentDim = parseInt(yAxisSelect.value);
 
     // Grid: X: -3 to 3 (7 cols), Y: 2 to -2 (5 rows)
@@ -243,7 +243,7 @@ function setupSequencer(vm) {
         cell.style.fontSize = "0.8rem";
         cell.style.border = "1px solid #333";
         cell.style.userSelect = "none";
-        
+
         // Find notes
         const note = currentStepNotes.find(n => {
             let match = (n.b === x);
@@ -264,7 +264,7 @@ function setupSequencer(vm) {
           vm.eval(`$sequencer.toggle_note(${stepIndex}, ${x}, ${y})`);
           renderLattice(stepIndex);
         };
-        
+
         latticeGrid.appendChild(cell);
       }
     }
@@ -274,7 +274,7 @@ function setupSequencer(vm) {
 function setupVisualizer(vm) {
   const canvas = document.getElementById("visualizer");
   const canvasCtx = canvas.getContext("2d");
-  
+
   vm.eval("JS.global[:synthAnalyser] = $synth.analyser_node");
   const analyser = window.synthAnalyser;
 
@@ -340,7 +340,7 @@ function setupUI(vm) {
   uiIds.forEach(id => {
     const el = document.getElementById(id);
     const display = document.getElementById(`val_${id}`);
-    
+
     updateParam(vm, id, el);
 
     el.addEventListener("input", () => {
@@ -361,9 +361,9 @@ function updateParam(vm, id, el) {
   if (el.type === "checkbox") {
     val = el.checked ? "true" : "false";
   } else if (el.type === "range") {
-    val = el.value; 
+    val = el.value;
   } else {
-    val = `"${el.value}"`; 
+    val = `"${el.value}"`;
   }
 
   if (el.type === "range") {

@@ -17,7 +17,7 @@ class Sequencer
   attr_accessor :bpm
   attr_accessor :root_freq
   attr_accessor :y_axis_dim # 3, 4, or 5
-  
+
   attr_reader :is_playing, :current_step
 
   def initialize(synth, ctx)
@@ -26,10 +26,10 @@ class Sequencer
     @bpm = 120
     @root_freq = 261.63 # C4
     @y_axis_dim = 3 # Default to 5-limit (3rd dim)
-    
+
     # @steps[index] is an Array of NoteCoord objects
-    @steps = Array.new(16) { [] } 
-    
+    @steps = Array.new(16) { [] }
+
     @is_playing = false
     @current_step = 0
     @next_note_time = 0.0
@@ -41,20 +41,20 @@ class Sequencer
   # y_val corresponds to the dimension specified by @y_axis_dim
   def toggle_note(step_index, b, y_val)
     step = @steps[step_index]
-    
+
     # Target coordinates
     t_c = (@y_axis_dim == 3) ? y_val : 0
     t_d = (@y_axis_dim == 4) ? y_val : 0
     t_e = (@y_axis_dim == 5) ? y_val : 0
-    
+
     # Find existing note with matching X(b) and Y(current dim) coordinates
     # We ignore Octave(a) for existence check to allow toggling the "cell"
     # Actually, if multiple octaves exist in the same cell, how do we handle toggle?
     # User requirement: "Rectangular selection".
     # Simplification: Toggling a cell creates a note with a=0 if none exists.
     # If notes exist in that cell, it removes ALL of them (or just the latest?).
-    # Let's say it removes all notes in that cell. 
-    
+    # Let's say it removes all notes in that cell.
+
     existing_indices = []
     step.each_with_index do |note, idx|
       match = (note.b == b)
@@ -77,17 +77,17 @@ class Sequencer
   # Change octave (a) for notes in a specific cell
   def shift_octave(step_index, b, y_val, delta)
     step = @steps[step_index]
-    
+
     t_c = (@y_axis_dim == 3) ? y_val : 0
     t_d = (@y_axis_dim == 4) ? y_val : 0
     t_e = (@y_axis_dim == 5) ? y_val : 0
-    
+
     step.each do |note|
       match = (note.b == b)
       match &&= (note.c == t_c) if @y_axis_dim == 3
       match &&= (note.d == t_d) if @y_axis_dim == 4
       match &&= (note.e == t_e) if @y_axis_dim == 5
-      
+
       if match
         note.a += delta
       end
@@ -112,7 +112,7 @@ class Sequencer
     @is_playing = true
     @current_step = 0
     @next_note_time = @ctx[:currentTime].to_f + 0.1
-    
+
     code = <<~JAVASCRIPT
       window._seqInterval = setInterval(() => {
         if (window.rubyVM) {
@@ -137,20 +137,20 @@ class Sequencer
 
   def schedule_step(step_index, time)
     notes = @steps[step_index]
-    
+
     if notes && !notes.empty?
       seconds_per_beat = 60.0 / @bpm
       step_duration = seconds_per_beat / 4.0
-      
+
       notes.each do |note|
         freq = calculate_freq(note)
         @synth.schedule_note(freq, time, step_duration * 0.8)
       end
     end
-    
+
     JS.global.call(:updatePlayhead, step_index)
   end
-  
+
   def calculate_freq(note)
     # F = R * (2^a) * ((3/2)^b) * ((5/4)^c) * ((7/8)^d) * ((11/4)^e)
     f = @root_freq * (2.0 ** note.a)
