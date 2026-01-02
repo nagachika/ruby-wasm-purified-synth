@@ -256,41 +256,34 @@ class Synthesizer
     @convolver[:buffer] = JS.global[:_tempReverbBuffer]
   end
 
-  def note_on(note_number)
+  def note_on(freq)
     return if @ctx.typeof == "undefined"
 
     if @ctx[:state] == "suspended"
       @ctx.call(:resume)
     end
 
-    # Stop existing voice for this note if any
-    if @active_voices[note_number]
-      @active_voices[note_number].stop_immediately
+    # Stop existing voice for this frequency if any
+    if @active_voices[freq]
+      @active_voices[freq].stop_immediately
     end
 
-    freq = 440.0 * (2.0 ** ((note_number - 69) / 12.0))
-    now = @ctx[:currentTime].to_f
-
-    # For manual play, we don't know duration, so we set a very long duration
-    # and rely on note_off calling stop_immediately
-    voice = Voice.new(@ctx, freq, self, now, 1000.0)
-    @active_voices[note_number] = voice
+    voice = Voice.new(@ctx, freq, self, @ctx[:currentTime].to_f, 1000.0)
+    @active_voices[freq] = voice
     voice.start
   end
 
-  def note_off(note_number)
-    voice = @active_voices[note_number]
+  def note_off(freq)
+    voice = @active_voices[freq]
     if voice
       voice.stop_immediately
-      @active_voices.delete(note_number)
+      @active_voices.delete(freq)
     end
   end
 
-  def schedule_note(note_number, start_time, duration)
-    freq = 440.0 * (2.0 ** ((note_number - 69) / 12.0))
+  def schedule_note(freq, start_time, duration)
     # Fire and forget voice for sequencer
     voice = Voice.new(@ctx, freq, self, start_time, duration)
     voice.start
-    # We don't track scheduled voices in @active_voices because they auto-stop
   end
 end

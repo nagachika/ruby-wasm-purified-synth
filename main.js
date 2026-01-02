@@ -131,9 +131,9 @@ function setupSequencer(vm) {
       stepBtn.dataset.active = isActive ? "false" : "true";
       stepBtn.style.background = isActive ? "#444" : "#4dabf7";
       
-      // Toggle in Ruby
+      // Toggle in Ruby (using 261.63 Hz / C4 as default for now)
       try {
-        vm.eval(`$sequencer.toggle_step(${i}, 60)`);
+        vm.eval(`$sequencer.toggle_step(${i}, 261.63)`);
       } catch (e) {
         console.error("Sequencer toggle error:", e);
       }
@@ -292,20 +292,20 @@ function updateParam(vm, id, el) {
 }
 
 function setupKeyboard(vm) {
+  const getFreq = (note) => 440.0 * Math.pow(2.0, (note - 69) / 12.0);
+
   window.addEventListener("keydown", (e) => {
     if (e.repeat) return;
     const note = keyMap[e.key];
     if (note) {
-      vm.eval(`$synth.note_on(${note})`);
-      
-      // Visual feedback?
+      vm.eval(`$synth.note_on(${getFreq(note)})`);
     }
   });
 
   window.addEventListener("keyup", (e) => {
     const note = keyMap[e.key];
     if (note) {
-      vm.eval(`$synth.note_off(${note})`);
+      vm.eval(`$synth.note_off(${getFreq(note)})`);
     }
   });
 }

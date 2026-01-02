@@ -17,11 +17,11 @@ class Sequencer
     @timer_id = nil
   end
 
-  def toggle_step(index, note_number)
-    if @steps[index] == note_number
+  def toggle_step(index, freq)
+    if @steps[index] == freq
       @steps[index] = nil
     else
-      @steps[index] = note_number
+      @steps[index] = freq
     end
   end
 
@@ -58,17 +58,14 @@ class Sequencer
   end
 
   def schedule_note(step_index, time)
-    note = @steps[step_index]
-    if note
+    freq = @steps[step_index]
+    if freq
       # Play note for 1 step duration (minus a little for articulation)
       seconds_per_beat = 60.0 / @bpm
       # Assuming 16th notes (4 steps per beat)
       step_duration = seconds_per_beat / 4.0
       
-      # We need a way to schedule note_on/off at specific time in Synthesizer
-      # Currently Synthesizer#note_on plays immediately.
-      # We should update Synthesizer to accept 'time' argument.
-      @synth.schedule_note(note, time, step_duration * 0.8)
+      @synth.schedule_note(freq, time, step_duration * 0.8)
     end
     
     # Notify UI to update playhead (visual only)
