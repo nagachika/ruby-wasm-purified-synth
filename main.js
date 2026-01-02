@@ -62,28 +62,112 @@ const main = async () => {
     overlay.style.display = "none";
 
     console.log("Loading Ruby script...");
-    const scriptRes = await fetch("src/synthesizer.rb");
+    const scriptRes = await fetch(`src/synthesizer.rb?_=${Date.now()}`);
     if (!scriptRes.ok) {
         console.error("Failed to fetch src/synthesizer.rb");
         return;
     }
     const scriptText = await scriptRes.text();
     vm.eval(scriptText);
+    
+    // Load Sequencer script
+    const seqRes = await fetch(`src/sequencer.rb?_=${Date.now()}`);
+    if (seqRes.ok) {
+      const seqText = await seqRes.text();
+      vm.eval(seqText);
+    } else {
+      console.error("Failed to fetch src/sequencer.rb");
+    }
 
     // Instantiate Synthesizer
-    // Passing AudioContext via JS.eval inside Ruby, or passing it as argument?
-    // Synthesizer#initialize(ctx) expects a JS::Object.
-    // We can put audioCtx on window and let Ruby retrieve it, or pass it.
-    // Let's pass it by putting it in a known global for Ruby to grab easily if we can't pass directly via eval str.
-    // Actually, we can just do:
     vm.eval("$synth = Synthesizer.new(JS.eval('return window.audioCtx;'))");
     console.log("Synthesizer initialized");
+    
+    // Instantiate Sequencer
+    vm.eval("$sequencer = Sequencer.new($synth, JS.eval('return window.audioCtx;'))");
 
     setupUI(vm);
     setupKeyboard(vm);
     setupVisualizer(vm);
+    setupSequencer(vm);
   };
 };
+
+// Define global callback immediately
+window.updatePlayhead = (stepIndex) => {
+  const grid = document.getElementById("sequencer-grid");
+  if (!grid) return;
+  const steps = grid.children;
+  for (let i = 0; i < steps.length; i++) {
+    if (i === stepIndex) {
+      steps[i].style.borderColor = "#fff";
+      steps[i].style.boxShadow = "0 0 5px #fff";
+    } else {
+      steps[i].style.borderColor = "#555";
+      steps[i].style.boxShadow = "none";
+    }
+  }
+};
+
+function setupSequencer(vm) {
+  const grid = document.getElementById("sequencer-grid");
+  const playBtn = document.getElementById("seq-play-btn");
+  const bpmInput = document.getElementById("bpm");
+  const bpmDisplay = document.getElementById("val_bpm");
+  
+  // Generate 16 steps
+  for (let i = 0; i < 16; i++) {
+    const stepBtn = document.createElement("div");
+    stepBtn.style.height = "40px";
+    stepBtn.style.background = "#444";
+    stepBtn.style.borderRadius = "4px";
+    stepBtn.style.cursor = "pointer";
+    stepBtn.style.border = "2px solid #555";
+    stepBtn.dataset.index = i;
+    stepBtn.dataset.active = "false";
+    
+    stepBtn.onclick = () => {
+      const isActive = stepBtn.dataset.active === "true";
+      stepBtn.dataset.active = isActive ? "false" : "true";
+      stepBtn.style.background = isActive ? "#444" : "#4dabf7";
+      
+      // Toggle in Ruby
+      try {
+        vm.eval(`$sequencer.toggle_step(${i}, 60)`);
+      } catch (e) {
+        console.error("Sequencer toggle error:", e);
+      }
+    };
+    
+    grid.appendChild(stepBtn);
+  }
+
+  playBtn.onclick = () => {
+    try {
+      const isPlaying = vm.eval("$sequencer.is_playing").toString() === "true";
+      if (isPlaying) {
+        vm.eval("$sequencer.stop");
+        playBtn.textContent = "Play";
+        playBtn.style.background = "#007bff";
+      } else {
+        vm.eval("$sequencer.start");
+        playBtn.textContent = "Stop";
+        playBtn.style.background = "#dc3545";
+      }
+    } catch (e) {
+      console.error("Sequencer play/stop error:", e);
+    }
+  };
+
+  bpmInput.addEventListener("input", () => {
+    bpmDisplay.textContent = bpmInput.value;
+    try {
+      vm.eval(`$sequencer.bpm = ${bpmInput.value}`);
+    } catch (e) {
+      console.error("BPM update error:", e);
+    }
+  });
+}
 
 function setupVisualizer(vm) {
   const canvas = document.getElementById("visualizer");

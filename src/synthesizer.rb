@@ -1,10 +1,11 @@
 require "js"
 
 class Voice
-  def initialize(ctx, freq, synth_params)
+  def initialize(ctx, freq, synth_params, start_time, duration)
     @ctx = ctx
     @params = synth_params
-    @now = @ctx[:currentTime].to_f
+    @start_time = start_time
+    @stop_time = start_time + duration
 
     # --- VCO (Oscillator) ---
     @vco = @ctx.call(:createOscillator)
@@ -32,7 +33,8 @@ class Voice
 
       @lfo.connect(@lfo_gain)
       @lfo_gain.connect(@vcf[:frequency])
-      @lfo.start(@now)
+      @lfo.start(@start_time)
+      @lfo.stop(@stop_time + @params.release + 0.1)
     end
 
     # Connections: VCO -> VCF -> VCA -> Master Gain
@@ -42,10 +44,11 @@ class Voice
   end
 
   def start
-    t = @now
+    t = @start_time
     attack = @params.attack
     decay = @params.decay
     sustain = @params.sustain
+    release = @params.release
 
     # Web Audio API ramp quirk workaround
     min_val = 0.001
@@ -60,29 +63,32 @@ class Voice
     # Decay
     sus_val = (sustain <= 0) ? min_val : sustain
     gain_param.exponentialRampToValueAtTime(sus_val, t + attack + decay)
+    
+    # Scheduled Release (Note Off)
+    # Since we know duration, we can schedule the release phase immediately
+    release_start = @stop_time
+    gain_param.setValueAtTime(sus_val, release_start)
+    gain_param.exponentialRampToValueAtTime(min_val, release_start + release)
 
     @vco.start(t)
+    @vco.stop(release_start + release + 0.1)
   end
-
-  def stop
+  
+  # For manual stop (keyboard play), we might override or ignore if scheduled
+  def stop_immediately
     now = @ctx[:currentTime].to_f
     release = @params.release
     min_val = 0.001
-
+    
     gain_param = @vca[:gain]
     gain_param.cancelScheduledValues(now)
-
-    # Current value for smooth release
     current_gain = gain_param[:value].to_f
     gain_param.setValueAtTime(current_gain, now)
-
-    # Release
     gain_param.exponentialRampToValueAtTime(min_val, now + release)
-
-    # Stop oscillators
-    stop_time = now + release + 0.1
-    @vco.stop(stop_time)
-    @lfo.stop(stop_time) if @lfo
+    
+    stop_t = now + release + 0.1
+    @vco.stop(stop_t)
+    @lfo.stop(stop_t) if @lfo
   end
 end
 
@@ -259,12 +265,15 @@ class Synthesizer
 
     # Stop existing voice for this note if any
     if @active_voices[note_number]
-      @active_voices[note_number].stop
+      @active_voices[note_number].stop_immediately
     end
 
     freq = 440.0 * (2.0 ** ((note_number - 69) / 12.0))
+    now = @ctx[:currentTime].to_f
 
-    voice = Voice.new(@ctx, freq, self)
+    # For manual play, we don't know duration, so we set a very long duration
+    # and rely on note_off calling stop_immediately
+    voice = Voice.new(@ctx, freq, self, now, 1000.0)
     @active_voices[note_number] = voice
     voice.start
   end
@@ -272,8 +281,16 @@ class Synthesizer
   def note_off(note_number)
     voice = @active_voices[note_number]
     if voice
-      voice.stop
+      voice.stop_immediately
       @active_voices.delete(note_number)
     end
+  end
+
+  def schedule_note(note_number, start_time, duration)
+    freq = 440.0 * (2.0 ** ((note_number - 69) / 12.0))
+    # Fire and forget voice for sequencer
+    voice = Voice.new(@ctx, freq, self, start_time, duration)
+    voice.start
+    # We don't track scheduled voices in @active_voices because they auto-stop
   end
 end
