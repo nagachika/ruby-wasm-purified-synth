@@ -7,10 +7,16 @@ class Voice
     @start_time = start_time
     @stop_time = start_time + duration
 
-    # --- VCO (Oscillator) ---
-    @vco = @ctx.call(:createOscillator)
-    @vco[:type] = @params.osc_type
-    @vco[:frequency][:value] = freq
+    # --- VCO (Oscillator or Noise) ---
+    if @params.osc_type == "noise"
+      @vco = @ctx.call(:createBufferSource)
+      @vco[:buffer] = @params.noise_buffer
+      @vco[:loop] = true
+    else
+      @vco = @ctx.call(:createOscillator)
+      @vco[:type] = @params.osc_type
+      @vco[:frequency][:value] = freq
+    end
 
     # --- VCF (Filter) ---
     @vcf = @ctx.call(:createBiquadFilter)
@@ -63,7 +69,7 @@ class Voice
     # Decay
     sus_val = (sustain <= 0) ? min_val : sustain
     gain_param.exponentialRampToValueAtTime(sus_val, t + attack + decay)
-    
+
     # Scheduled Release (Note Off)
     # Since we know duration, we can schedule the release phase immediately
     release_start = @stop_time
@@ -73,19 +79,19 @@ class Voice
     @vco.start(t)
     @vco.stop(release_start + release + 0.1)
   end
-  
+
   # For manual stop (keyboard play), we might override or ignore if scheduled
   def stop_immediately
     now = @ctx[:currentTime].to_f
     release = @params.release
     min_val = 0.001
-    
+
     gain_param = @vca[:gain]
     gain_param.cancelScheduledValues(now)
     current_gain = gain_param[:value].to_f
     gain_param.setValueAtTime(current_gain, now)
     gain_param.exponentialRampToValueAtTime(min_val, now + release)
-    
+
     stop_t = now + release + 0.1
     @vco.stop(stop_t)
     @lfo.stop(stop_t) if @lfo
@@ -130,7 +136,7 @@ class Synthesizer
     # Defaults
     @delay_time = 0.3
     @delay_feedback = 0.4
-    @delay_mix = 0.3 
+    @delay_mix = 0.3
 
     @reverb_seconds = 2.0
     @reverb_mix = 0.3
@@ -148,7 +154,7 @@ class Synthesizer
     @reverb_dry_gain[:gain][:value] = 1.0 - @reverb_mix
 
     # --- Routing Chain ---
-    
+
     # 1. Delay Block
     # Input: @master_gain
     @master_gain.connect(@delay_node)
@@ -197,7 +203,25 @@ class Synthesizer
     @lfo_depth = 500.0
 
     @active_voices = {}
+    @noise_buffer = create_noise_buffer
   end
+
+  def create_noise_buffer
+    rate = @ctx[:sampleRate].to_f
+    length = rate.to_i # 1 second of noise
+    buffer = @ctx.call(:createBuffer, 1, length, rate)
+
+    JS.eval(<<~JAVASCRIPT)
+      const buffer = window._tempNoiseBuffer = window.audioCtx.createBuffer(1, #{length}, window.audioCtx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < #{length}; i++) {
+        data[i] = Math.random() * 2 - 1;
+      }
+    JAVASCRIPT
+    JS.global[:_tempNoiseBuffer]
+  end
+
+  attr_reader :noise_buffer
 
   # Custom setters to update audio nodes immediately
   def delay_time=(val)
@@ -240,7 +264,7 @@ class Synthesizer
       const seconds = #{@reverb_seconds};
       const decay = 2.0;
       const buffer = ctx.createBuffer(2, length, ctx.sampleRate);
-      
+
       for (let c = 0; c < 2; c++) {
         const channelData = buffer.getChannelData(c);
         for (let i = 0; i < length; i++) {
