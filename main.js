@@ -114,8 +114,19 @@ function setupSequencer(vm) {
   const playBtn = document.getElementById("seq-play-btn");
   const bpmInput = document.getElementById("bpm");
   const bpmDisplay = document.getElementById("val_bpm");
+  const rootFreqInput = document.getElementById("root_freq");
   
-  // Generate 16 steps
+  // Modal Elements
+  const modal = document.getElementById("grid-modal");
+  const closeModal = document.getElementById("close-modal");
+  const modalStepNum = document.getElementById("modal-step-num");
+  const yAxisSelect = document.getElementById("y_axis_dim");
+  const latticeGrid = document.getElementById("lattice-grid");
+
+  let currentEditingStep = null;
+  let currentStepNotes = [];
+
+  // Initialize Sequencer Grid
   for (let i = 0; i < 16; i++) {
     const stepBtn = document.createElement("div");
     stepBtn.style.height = "40px";
@@ -124,19 +135,9 @@ function setupSequencer(vm) {
     stepBtn.style.cursor = "pointer";
     stepBtn.style.border = "2px solid #555";
     stepBtn.dataset.index = i;
-    stepBtn.dataset.active = "false";
     
     stepBtn.onclick = () => {
-      const isActive = stepBtn.dataset.active === "true";
-      stepBtn.dataset.active = isActive ? "false" : "true";
-      stepBtn.style.background = isActive ? "#444" : "#4dabf7";
-      
-      // Toggle in Ruby (using 261.63 Hz / C4 as default for now)
-      try {
-        vm.eval(`$sequencer.toggle_step(${i}, 261.63)`);
-      } catch (e) {
-        console.error("Sequencer toggle error:", e);
-      }
+      openEditor(i);
     };
     
     grid.appendChild(stepBtn);
@@ -163,22 +164,117 @@ function setupSequencer(vm) {
     bpmDisplay.textContent = bpmInput.value;
     try {
       vm.eval(`$sequencer.bpm = ${bpmInput.value}`);
-    } catch (e) {
-      console.error("BPM update error:", e);
-    }
+    } catch (e) { console.error(e); }
   });
+
+  rootFreqInput.addEventListener("change", () => {
+    try {
+      vm.eval(`$sequencer.root_freq = ${rootFreqInput.value}`);
+    } catch (e) { console.error(e); }
+  });
+
+  yAxisSelect.addEventListener("change", () => {
+    try {
+      vm.eval(`$sequencer.y_axis_dim = ${yAxisSelect.value}`);
+      if (currentEditingStep !== null) {
+        renderLattice(currentEditingStep);
+      }
+    } catch (e) { console.error(e); }
+  });
+
+  closeModal.onclick = () => {
+    modal.style.display = "none";
+    currentEditingStep = null;
+    
+    // Update step visual status (active if has notes)
+    // We should do this on modal close to refresh the grid color
+    updateGridVisuals();
+  };
+  
+  function updateGridVisuals() {
+    for (let i = 0; i < 16; i++) {
+      const stepBtn = grid.children[i];
+      try {
+        const json = vm.eval(`$sequencer.get_step_notes_json(${i})`).toString();
+        const notes = JSON.parse(json);
+        if (notes.length > 0) {
+          stepBtn.style.background = "#4dabf7";
+        } else {
+          stepBtn.style.background = "#444";
+        }
+      } catch(e) {}
+    }
+  }
+
+  function openEditor(stepIndex) {
+    currentEditingStep = stepIndex;
+    modalStepNum.textContent = stepIndex + 1;
+    modal.style.display = "flex";
+    
+    try {
+      const currentDim = vm.eval("$sequencer.y_axis_dim").toString();
+      yAxisSelect.value = currentDim;
+    } catch(e) {}
+    
+    renderLattice(stepIndex);
+  }
+
+  function renderLattice(stepIndex) {
+    latticeGrid.innerHTML = "";
+    
+    try {
+      const json = vm.eval(`$sequencer.get_step_notes_json(${stepIndex})`).toString();
+      currentStepNotes = JSON.parse(json);
+    } catch(e) { console.error(e); return; }
+    
+    const currentDim = parseInt(yAxisSelect.value);
+
+    // Grid: X: -3 to 3 (7 cols), Y: 2 to -2 (5 rows)
+    for (let y = 2; y >= -2; y--) {
+      for (let x = -3; x <= 3; x++) {
+        const cell = document.createElement("div");
+        cell.style.background = "#222";
+        cell.style.color = "#fff";
+        cell.style.display = "flex";
+        cell.style.alignItems = "center";
+        cell.style.justifyContent = "center";
+        cell.style.height = "50px";
+        cell.style.cursor = "pointer";
+        cell.style.fontSize = "0.8rem";
+        cell.style.border = "1px solid #333";
+        cell.style.userSelect = "none";
+        
+        // Find notes
+        const note = currentStepNotes.find(n => {
+            let match = (n.b === x);
+            if (currentDim === 3) match = match && (n.c === y);
+            if (currentDim === 4) match = match && (n.d === y);
+            if (currentDim === 5) match = match && (n.e === y);
+            return match;
+        });
+
+        if (note) {
+          cell.style.background = "#4dabf7";
+          if (note.a > 0) cell.textContent = `↑${note.a}`;
+          else if (note.a < 0) cell.textContent = `↓${Math.abs(note.a)}`;
+          else cell.textContent = "0";
+        }
+
+        cell.onclick = () => {
+          vm.eval(`$sequencer.toggle_note(${stepIndex}, ${x}, ${y})`);
+          renderLattice(stepIndex);
+        };
+        
+        latticeGrid.appendChild(cell);
+      }
+    }
+  }
 }
 
 function setupVisualizer(vm) {
   const canvas = document.getElementById("visualizer");
   const canvasCtx = canvas.getContext("2d");
   
-  // Retrieve AnalyserNode from Ruby object
-  // Since we expose attr_reader :analyser_node, we can access it.
-  // Note: Returned value from Ruby eval of a JS::Object wrapper is the JS object itself when crossing boundary back to JS?
-  // Actually, via vm.eval(), we get a JsValue. 
-  // Let's rely on global JS access or helper.
-  // Easiest way: Let Ruby assign it to a global JS variable.
   vm.eval("JS.global[:synthAnalyser] = $synth.analyser_node");
   const analyser = window.synthAnalyser;
 
@@ -245,8 +341,6 @@ function setupUI(vm) {
     const el = document.getElementById(id);
     const display = document.getElementById(`val_${id}`);
     
-    // Initial Sync (Ruby -> UI) isn't strictly necessary if defaults match,
-    // but let's sync UI -> Ruby just in case.
     updateParam(vm, id, el);
 
     el.addEventListener("input", () => {
@@ -267,21 +361,11 @@ function updateParam(vm, id, el) {
   if (el.type === "checkbox") {
     val = el.checked ? "true" : "false";
   } else if (el.type === "range") {
-    val = el.value; // Ruby handles string->float conversion if we use appropriate method or if we cast in Ruby
-    // But better to pass numbers as strings and let Ruby to_f them, OR make sure Ruby attribute writer handles it.
-    // The attr_accessor in Ruby just stores what it gets. Voice class does to_f?
-    // Let's check Synthesizer class. It uses attr_accessor.
-    // Voice class uses @params.cutoff.
-    // @vcf[:frequency][:value] = @params.cutoff
-    // If @params.cutoff is a String "2000", JS gem might handle it or might not.
-    // Safest is to cast in Ruby.
-    // We will update the Synthesizer setters or just eval assignment with explicit conversion.
+    val = el.value; 
   } else {
-    val = `"${el.value}"`; // Quote strings
+    val = `"${el.value}"`; 
   }
 
-  // Construct Ruby code to update the parameter
-  // Special handling for numbers
   if (el.type === "range") {
      vm.eval(`$synth.${id} = ${el.value}.to_f`);
   } else if (el.type === "checkbox") {
