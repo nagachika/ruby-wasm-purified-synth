@@ -1,41 +1,64 @@
 # Ruby/WASM Web Synth
 
-Ruby/WASM を用いてブラウザ上で動作するシンセサイザー＆シーケンサープロジェクトです。
+A polyphonic subtractive synthesizer running entirely in the browser using Ruby/WASM and the Web Audio API.
 
-## プロジェクト構成
+## Features
 
-- `index.html`: エントリーポイント。Import Map による依存関係の解決と UI。
-- `main.js`: Ruby VM の初期化、Ruby スクリプトのフェッチ、JS/Ruby のブリッジ処理。
-- `src/`: Ruby ソースコードを配置。
-  - `synthesizer.rb`: シンセサイザーのロジック（音色生成、ボイス管理）。
-- `Rakefile`: 開発用タスク（サーバー起動など）。
-- `Gemfile`: 開発環境の依存関係（webrick, rake）。
+*   **Polyphonic Synthesizer**: Supports simultaneous notes (chords).
+*   **Subtractive Synthesis Engine**:
+    *   **VCO**: Oscillator with Sawtooth, Square, Triangle, and Sine waveforms.
+    *   **VCF**: Multi-mode filter (Lowpass, Highpass, Bandpass, Notch) with Cutoff and Resonance controls.
+    *   **VCA**: Amplifier with ADSR (Attack, Decay, Sustain, Release) envelope.
+    *   **LFO**: Low Frequency Oscillator modulating the filter cutoff.
+*   **Lattice Sequencer**:
+    *   **Microtonal Tuning**: Based on Just Intonation ratios rather than equal temperament.
+    *   **5-Limit & Beyond**: Construct harmonies using 3rd, 5th, 7th, and 11th harmonics.
+    *   **Grid Interface**: Visual chord construction on a harmonic lattice.
+    *   **Documentation**: See [Just Intonation Lattice Tuning System](doc/TUNING.md) for details on how pitch is calculated and visualized.
+*   **Effects Chain**:
+    *   **Delay**: Stereo delay with Time, Feedback, and Mix controls.
+    *   **Reverb**: Convolution reverb with procedural Impulse Response generation (Decay Time and Mix controls).
+*   **Visualizer**: Real-time visualization of the audio output (Oscilloscope / Spectrum Analyzer).
+*   **Interactive UI**: Full control over synthesis parameters via HTML inputs.
+*   **Keyboard Support**: Play notes using your computer keyboard (Standard 12-TET mapped to Hz).
 
-## 開発環境の準備
+## Quick Start
 
-Ruby がインストールされている環境で、以下のコマンドを実行して依存関係をセットアップします。
+1.  **Install Dependencies**:
+    ```bash
+    bundle install
+    ```
 
-```bash
-bundle install
-```
+2.  **Start Development Server**:
+    ```bash
+    rake server
+    ```
 
-## 実行方法
+3.  **Open in Browser**:
+    Visit `http://localhost:8000`.
 
-1. 以下のコマンドで開発用サーバーを起動します。
-   ```bash
-   rake server
-   ```
-2. ブラウザで `http://localhost:8000` にアクセスします。
-3. 「Initialize & Play」ボタンを押すと、Ruby VM がロードされ、`src/synthesizer.rb` の demo 関数が実行されて音が鳴ります。
+4.  **Play**:
+    *   Click "Click to Start" to initialize the audio engine.
+    *   **Manual Play**: Use your keyboard to play standard notes (Z, X, C...).
+    *   **Sequencer**: Click the grid buttons to open the **Step Editor**. Construct microtonal chords on the lattice grid. Press "Play" to hear the sequence.
 
-## 開発のポイント
+## Project Structure
 
-- **Ruby 側の修正:** `src/*.rb` を編集後、ブラウザをリロードするだけで変更が反映されます（開発時は JS が毎回ファイルを fetch するため）。
-- **JS 連携:**
-  - Ruby 側で `require "js"` することで、`JS.eval` や `JS.global` を通じて Web Audio API にアクセスしています。
-  - JS 側から Ruby のメソッドを呼ぶには `vm.eval("method_name")` を使用します。
-- **音色の変更:** `src/synthesizer.rb` 内の `Synthesizer` クラスの `@osc[:type]` を `"sine"`, `"square"`, `"sawtooth"`, `"triangle"` に書き換えることで音色が変わります。
+-   `index.html`: The main user interface and entry point.
+-   `main.js`: Initializes the Ruby VM, handles UI interactions, and bridges JavaScript events to Ruby.
+-   `src/synthesizer.rb`: The core synthesizer logic written in Ruby. Handles voice allocation, audio graph construction, and parameter updates.
+-   `src/sequencer.rb`: The lattice-based sequencer logic.
+-   `doc/TUNING.md`: Detailed explanation of the Just Intonation tuning system and grid interface.
+-   `Rakefile`: Tasks for development (running the server).
+-   `GEMINI.md`: Project-specific context and guidelines for AI assistance.
 
-## 注意事項
+## Technology Stack
 
-ブラウザのセキュリティ制限により、AudioContext はボタンクリックなどのユーザーアクション内で `resume()` または生成する必要があります。本プロジェクトでは `main.js` の `onclick` ハンドラ内でこれを処理しています。
+-   **Language**: Ruby (compiled to WebAssembly via ruby.wasm)
+-   **Audio API**: Web Audio API
+-   **Environment**: Modern Web Browser (Chrome, Firefox, Safari, Edge)
+
+## Development Notes
+
+-   **Ruby/JS Interop**: The project uses the `js` gem to interact with Web Audio API objects directly from Ruby.
+-   **Real-time Updates**: Editing `src/synthesizer.rb` and refreshing the browser will immediately reflect changes, as the Ruby script is fetched and evaluated at runtime.
