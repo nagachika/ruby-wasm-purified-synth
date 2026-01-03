@@ -215,8 +215,6 @@ window.updatePlayhead = (stepIndex) => {
   // Add new playhead to each timeline grid
   const grids = container.querySelectorAll(".timeline-grid");
   grids.forEach(grid => {
-     // Check if visible
-     // Actually, we can just append a div at the calculated position
      const cursor = document.createElement("div");
      cursor.className = "playhead-cursor";
      cursor.style.position = "absolute";
@@ -229,15 +227,18 @@ window.updatePlayhead = (stepIndex) => {
      cursor.style.zIndex = "10";
      cursor.style.pointerEvents = "none";
      grid.appendChild(cursor);
-     
-     // Auto-scroll if needed?
-     // Optional: simple check
-     const wrapper = grid.parentElement;
-     const left = stepIndex * CELL_WIDTH;
-     if (left < wrapper.scrollLeft || left > wrapper.scrollLeft + wrapper.clientWidth) {
-         wrapper.scrollLeft = left - wrapper.clientWidth / 2;
-     }
   });
+  
+  // Auto-scroll Master Scrollbar
+  const scrollContainer = document.getElementById("master-scroll-container");
+  if (scrollContainer) {
+      const left = stepIndex * CELL_WIDTH;
+      // Simple follow logic: keep playhead in view
+      const width = scrollContainer.clientWidth;
+      if (left < scrollContainer.scrollLeft || left > scrollContainer.scrollLeft + width) {
+          scrollContainer.scrollLeft = left - width / 2;
+      }
+  }
 };
 
 function setupSequencer(vm) {
@@ -280,6 +281,36 @@ function setupSequencer(vm) {
         totalSteps = parseInt(vm.eval("$sequencer.total_steps").toString());
     } catch(e) { return; }
 
+    // Master Scrollbar Container
+    const scrollContainer = document.createElement("div");
+    scrollContainer.id = "master-scroll-container";
+    scrollContainer.style.overflowX = "scroll";
+    scrollContainer.style.overflowY = "hidden";
+    scrollContainer.style.marginTop = "10px";
+    scrollContainer.style.marginBottom = "10px";
+    scrollContainer.style.border = "1px solid #444";
+    scrollContainer.style.background = "#222";
+    scrollContainer.style.height = "15px"; // Scrollbar height
+
+    // Spacer to force scroll width
+    const scrollSpacer = document.createElement("div");
+    scrollSpacer.style.width = `${totalSteps * CELL_WIDTH}px`;
+    scrollSpacer.style.height = "1px";
+    scrollContainer.appendChild(scrollSpacer);
+
+    // Sync Scroll Event
+    scrollContainer.onscroll = (e) => {
+        const left = e.target.scrollLeft;
+        document.querySelectorAll(".timeline-wrapper").forEach(wrapper => {
+            wrapper.scrollLeft = left;
+        });
+    };
+
+    // Store previous scroll position to restore after re-render if needed
+    // Actually, a re-render resets everything, so we might lose position.
+    // Ideally we should persist it.
+    // For now let's just create it.
+
     for (let t = 0; t < tracksCount; t++) {
         const row = document.createElement("div");
         row.style.display = "flex";
@@ -288,7 +319,7 @@ function setupSequencer(vm) {
         row.style.marginBottom = "10px";
         row.style.height = "60px";
 
-        // Track Controls (Left Panel)
+        // ... Track Controls ...
         const controlDiv = document.createElement("div");
         controlDiv.style.display = "flex";
         controlDiv.style.flexDirection = "column";
@@ -358,11 +389,11 @@ function setupSequencer(vm) {
         controlDiv.appendChild(topRow);
         row.appendChild(controlDiv);
 
-        // Timeline Container (Scrollable)
+        // Timeline Container
         const timelineWrapper = document.createElement("div");
         timelineWrapper.className = "timeline-wrapper";
         timelineWrapper.style.flexGrow = "1";
-        timelineWrapper.style.overflowX = "scroll";
+        timelineWrapper.style.overflowX = "hidden"; // Hide individual bars
         timelineWrapper.style.overflowY = "hidden";
         timelineWrapper.style.position = "relative";
         timelineWrapper.style.background = "#222";
@@ -370,9 +401,11 @@ function setupSequencer(vm) {
 
         // Actual Grid
         const grid = document.createElement("div");
-        grid.className = "timeline-grid"; // For playhead targeting
+        grid.className = "timeline-grid"; 
         grid.style.display = "grid";
         grid.style.gridTemplateColumns = `repeat(${totalSteps}, ${CELL_WIDTH}px)`;
+        // Force width to match totalSteps * CELL_WIDTH to allow scrolling
+        grid.style.width = `${totalSteps * CELL_WIDTH}px`;
         grid.style.height = "100%";
         grid.style.position = "relative";
         grid.dataset.track = t;
@@ -399,16 +432,15 @@ function setupSequencer(vm) {
             )
         `;
 
-        // Mouse Events for Drawing
+        // ... Mouse Events ...
         grid.onmousedown = (e) => {
-            if (e.target.classList.contains("block")) return; // Don't start drawing on existing block
+            if (e.target.classList.contains("block")) return; 
             isDrawing = true;
             drawTrackIndex = t;
             const rect = grid.getBoundingClientRect();
             const x = e.clientX - rect.left;
             drawStartStep = Math.floor(x / CELL_WIDTH);
             
-            // Create Ghost
             ghostBlock = document.createElement("div");
             ghostBlock.style.position = "absolute";
             ghostBlock.style.height = "100%";
@@ -480,6 +512,31 @@ function setupSequencer(vm) {
         row.appendChild(timelineWrapper);
         rowsContainer.appendChild(row);
     }
+    
+    // Append Master Scrollbar at the end
+    // Need to adjust margin to align with timelines (exclude track control width)
+    const scrollRow = document.createElement("div");
+    scrollRow.style.display = "flex";
+    scrollRow.style.gap = "0";
+    
+    const spacer = document.createElement("div");
+    spacer.style.width = "110px"; // 100px width + 10px margin of controls
+    spacer.style.flexShrink = "0";
+    
+    scrollContainer.style.flexGrow = "1";
+    
+    scrollRow.appendChild(spacer);
+    scrollRow.appendChild(scrollContainer);
+    rowsContainer.appendChild(scrollRow);
+
+    // Restore scroll position if possible?
+    if (window._lastScrollLeft) {
+        scrollContainer.scrollLeft = window._lastScrollLeft;
+    }
+    scrollContainer.addEventListener("scroll", () => {
+        window._lastScrollLeft = scrollContainer.scrollLeft;
+    });
+
   }
   
   // Global Mouse Up
