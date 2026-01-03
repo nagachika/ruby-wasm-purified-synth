@@ -206,19 +206,36 @@ function setupPresets(vm) {
 window.updatePlayhead = (stepIndex) => {
   const container = document.getElementById("sequencer-rows");
   if (!container) return;
-  const rows = container.children;
-  for (const row of rows) {
-     const steps = row.querySelectorAll(".step-btn");
-     for (let i = 0; i < steps.length; i++) {
-        if (i === stepIndex) {
-            steps[i].style.borderColor = "#fff";
-            steps[i].style.boxShadow = "0 0 5px #fff";
-        } else {
-            steps[i].style.borderColor = "#555";
-            steps[i].style.boxShadow = "none";
-        }
+  // Clear old playheads
+  const oldPlayheads = container.querySelectorAll(".playhead-cursor");
+  oldPlayheads.forEach(el => el.remove());
+
+  // Add new playhead to each timeline grid
+  const grids = container.querySelectorAll(".timeline-grid");
+  grids.forEach(grid => {
+     // Check if visible
+     // Actually, we can just append a div at the calculated position
+     const cursor = document.createElement("div");
+     cursor.className = "playhead-cursor";
+     cursor.style.position = "absolute";
+     cursor.style.top = "0";
+     cursor.style.bottom = "0";
+     cursor.style.width = "2px";
+     cursor.style.background = "#fff";
+     cursor.style.boxShadow = "0 0 4px #fff";
+     cursor.style.left = `${stepIndex * 15}px`; // 15 = CELL_WIDTH (hardcoded in renderSequencer scope, need to match)
+     cursor.style.zIndex = "10";
+     cursor.style.pointerEvents = "none";
+     grid.appendChild(cursor);
+     
+     // Auto-scroll if needed?
+     // Optional: simple check
+     const wrapper = grid.parentElement;
+     const left = stepIndex * 15;
+     if (left < wrapper.scrollLeft || left > wrapper.scrollLeft + wrapper.clientWidth) {
+         wrapper.scrollLeft = left - wrapper.clientWidth / 2;
      }
-  }
+  });
 };
 
 function setupSequencer(vm) {
@@ -241,32 +258,50 @@ function setupSequencer(vm) {
   let currentStepNotes = [];
   let currentSelectedCell = null; // {x, y}
 
+  // Sequencer State
+  let isDrawing = false;
+  let drawStartStep = 0;
+  let drawTrackIndex = -1;
+  let ghostBlock = null;
+  const CELL_WIDTH = 15; // px
+
   function renderSequencer() {
     rowsContainer.innerHTML = "";
     let tracksCount = 0;
     let currentTrackIndex = 0;
+    let totalSteps = 128; // Default
+    
     try {
         tracksCount = parseInt(vm.eval("$sequencer.tracks.length").toString());
         currentTrackIndex = parseInt(vm.eval("$sequencer.current_track_index").toString());
+        totalSteps = parseInt(vm.eval("$sequencer.total_steps").toString());
     } catch(e) { return; }
 
     for (let t = 0; t < tracksCount; t++) {
         const row = document.createElement("div");
         row.style.display = "flex";
-        row.style.gap = "5px";
-        row.style.alignItems = "center";
+        row.style.gap = "0";
+        row.style.alignItems = "stretch";
+        row.style.marginBottom = "10px";
+        row.style.height = "60px";
 
-        // Track Controls
+        // Track Controls (Left Panel)
         const controlDiv = document.createElement("div");
         controlDiv.style.display = "flex";
+        controlDiv.style.flexDirection = "column";
+        controlDiv.style.width = "100px";
+        controlDiv.style.flexShrink = "0";
+        controlDiv.style.borderRight = "1px solid #555";
+        controlDiv.style.paddingRight = "10px";
+        controlDiv.style.marginRight = "10px";
+        controlDiv.style.justifyContent = "center";
         controlDiv.style.gap = "5px";
-        controlDiv.style.minWidth = "120px";
 
-        // Select Button / Label
+        // Select Button
         const labelBtn = document.createElement("button");
         labelBtn.textContent = `Track ${t + 1}`;
-        labelBtn.style.flexGrow = "1";
-        labelBtn.style.padding = "5px";
+        labelBtn.style.padding = "4px";
+        labelBtn.style.fontSize = "0.8rem";
         labelBtn.style.border = "1px solid #555";
         labelBtn.style.cursor = "pointer";
         if (t === currentTrackIndex) {
@@ -280,55 +315,150 @@ function setupSequencer(vm) {
 
         // Remove Button
         const removeBtn = document.createElement("button");
-        removeBtn.textContent = "🗑"; // Trash icon
-        removeBtn.style.padding = "5px";
+        removeBtn.textContent = "Del"; 
+        removeBtn.style.padding = "2px";
+        removeBtn.style.fontSize = "0.7rem";
         removeBtn.style.background = "#dc3545";
         removeBtn.style.color = "white";
         removeBtn.style.border = "none";
         removeBtn.style.cursor = "pointer";
         removeBtn.onclick = () => removeTrack(t);
 
-        controlDiv.appendChild(removeBtn);
         controlDiv.appendChild(labelBtn);
+        controlDiv.appendChild(removeBtn);
         row.appendChild(controlDiv);
 
-        // Steps
-        for (let s = 0; s < 16; s++) {
-            const stepBtn = document.createElement("div");
-            stepBtn.className = "step-btn"; // Class for playhead targeting
-            stepBtn.style.width = "30px";
-            stepBtn.style.height = "30px";
-            stepBtn.style.background = "#444";
-            stepBtn.style.borderRadius = "2px";
-            stepBtn.style.cursor = "pointer";
-            stepBtn.style.border = "1px solid #555";
-            stepBtn.dataset.track = t;
-            stepBtn.dataset.step = s;
+        // Timeline Container (Scrollable)
+        const timelineWrapper = document.createElement("div");
+        timelineWrapper.className = "timeline-wrapper";
+        timelineWrapper.style.flexGrow = "1";
+        timelineWrapper.style.overflowX = "auto";
+        timelineWrapper.style.overflowY = "hidden";
+        timelineWrapper.style.position = "relative";
+        timelineWrapper.style.background = "#222";
+        timelineWrapper.style.border = "1px solid #444";
 
-            // Check if active
-            try {
-                const json = vm.eval(`$sequencer.get_track_step_notes_json(${t}, ${s})`).toString();
-                const notes = JSON.parse(json);
-                if (notes.length > 0) {
-                    stepBtn.style.background = "#4dabf7";
-                }
-            } catch(e) {}
+        // Actual Grid
+        const grid = document.createElement("div");
+        grid.className = "timeline-grid"; // For playhead targeting
+        grid.style.display = "grid";
+        grid.style.gridTemplateColumns = `repeat(${totalSteps}, ${CELL_WIDTH}px)`;
+        grid.style.height = "100%";
+        grid.style.position = "relative";
+        grid.dataset.track = t;
 
-            stepBtn.onclick = () => {
-                // Ensure track is selected when editing?
-                // It might be better to just select the track to update UI contex
-                if (currentTrackIndex !== t) {
-                    selectTrack(t);
-                }
-                openEditor(t, s);
-            };
+        // Draw Background Lines (every 4 steps = 1 beat, every 32 steps = 1 bar)
+        grid.style.backgroundImage = `
+            repeating-linear-gradient(90deg, 
+                #333 0px, 
+                #333 1px, 
+                transparent 1px, 
+                transparent ${CELL_WIDTH}px
+            ),
+            repeating-linear-gradient(90deg,
+                #555 0px,
+                #555 1px,
+                transparent 1px, 
+                transparent ${CELL_WIDTH * 8}px
+            )
+        `;
 
-            row.appendChild(stepBtn);
-        }
+        // Mouse Events for Drawing
+        grid.onmousedown = (e) => {
+            if (e.target.classList.contains("block")) return; // Don't start drawing on existing block
+            isDrawing = true;
+            drawTrackIndex = t;
+            const rect = grid.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            drawStartStep = Math.floor(x / CELL_WIDTH);
+            
+            // Create Ghost
+            ghostBlock = document.createElement("div");
+            ghostBlock.style.position = "absolute";
+            ghostBlock.style.height = "100%";
+            ghostBlock.style.background = "rgba(77, 171, 247, 0.5)";
+            ghostBlock.style.left = `${drawStartStep * CELL_WIDTH}px`;
+            ghostBlock.style.width = `${CELL_WIDTH}px`;
+            ghostBlock.style.pointerEvents = "none";
+            grid.appendChild(ghostBlock);
+        };
 
+        grid.onmousemove = (e) => {
+            if (!isDrawing || drawTrackIndex !== t) return;
+            const rect = grid.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            let currentStep = Math.floor(x / CELL_WIDTH);
+            if (currentStep < drawStartStep) currentStep = drawStartStep; // No backwards drawing yet
+            
+            const len = currentStep - drawStartStep + 1;
+            ghostBlock.style.width = `${len * CELL_WIDTH}px`;
+        };
+        
+        // Render Existing Blocks
+        try {
+            const blocksJson = vm.eval(`$sequencer.get_track_blocks_json(${t})`).toString();
+            const blocks = JSON.parse(blocksJson);
+            
+            blocks.forEach(b => {
+                const blockDiv = document.createElement("div");
+                blockDiv.className = "block";
+                blockDiv.style.gridColumnStart = b.start + 1; // 1-based
+                blockDiv.style.gridColumnEnd = `span ${b.length}`;
+                blockDiv.style.background = b.notes_count > 0 ? "#4dabf7" : "#555";
+                blockDiv.style.border = "1px solid #fff";
+                blockDiv.style.borderRadius = "4px";
+                blockDiv.style.cursor = "pointer";
+                blockDiv.style.zIndex = "5";
+                blockDiv.style.position = "relative"; // To stack above grid
+                blockDiv.textContent = b.notes_count > 0 ? "♪" : "";
+                blockDiv.style.fontSize = "0.8rem";
+                blockDiv.style.color = "#fff";
+                blockDiv.style.display = "flex";
+                blockDiv.style.alignItems = "center";
+                blockDiv.style.justifyContent = "center";
+                blockDiv.title = `Start: ${b.start}, Len: ${b.length}`;
+                
+                blockDiv.onclick = (e) => {
+                    e.stopPropagation();
+                    if (currentTrackIndex !== t) selectTrack(t);
+                    openEditor(t, b.start);
+                };
+                
+                // Right click to delete?
+                blockDiv.oncontextmenu = (e) => {
+                    e.preventDefault();
+                    if (confirm("Delete block?")) {
+                        vm.eval(`$sequencer.remove_block(${t}, ${b.start})`);
+                        renderSequencer();
+                    }
+                };
+                
+                grid.appendChild(blockDiv);
+            });
+        } catch(e) { console.error(e); }
+
+        timelineWrapper.appendChild(grid);
+        row.appendChild(timelineWrapper);
         rowsContainer.appendChild(row);
     }
   }
+  
+  // Global Mouse Up
+  window.addEventListener("mouseup", () => {
+    if (isDrawing) {
+        if (ghostBlock) {
+            const width = parseInt(ghostBlock.style.width);
+            const steps = Math.round(width / CELL_WIDTH);
+            try {
+                vm.eval(`$sequencer.add_or_update_block(${drawTrackIndex}, ${drawStartStep}, ${steps})`);
+                renderSequencer();
+            } catch(e) { console.error(e); }
+            ghostBlock = null;
+        }
+        isDrawing = false;
+        drawTrackIndex = -1;
+    }
+  });
 
   function selectTrack(index) {
     try {
@@ -419,8 +549,8 @@ function setupSequencer(vm) {
 
   function openEditor(trackIndex, stepIndex) {
     currentEditingTrack = trackIndex;
-    currentEditingStep = stepIndex;
-    modalStepNum.textContent = `T${trackIndex + 1} : Step ${stepIndex + 1}`;
+    currentEditingStep = stepIndex; // acts as Block ID (Start Step)
+    modalStepNum.textContent = `T${trackIndex + 1} : Block @ ${stepIndex}`;
     modal.style.display = "flex";
 
     try {
@@ -436,7 +566,7 @@ function setupSequencer(vm) {
     if (currentEditingTrack === null) return;
 
     try {
-      const json = vm.eval(`$sequencer.get_track_step_notes_json(${currentEditingTrack}, ${stepIndex})`).toString();
+      const json = vm.eval(`$sequencer.get_block_notes_json(${currentEditingTrack}, ${stepIndex})`).toString();
       currentStepNotes = JSON.parse(json);
     } catch(e) { console.error(e); return; }
 
@@ -457,7 +587,7 @@ function setupSequencer(vm) {
         cell.style.border = "1px solid #333";
         cell.style.userSelect = "none";
 
-        // Selection highligh
+        // Selection highlight
         if (currentSelectedCell && currentSelectedCell.x === x && currentSelectedCell.y === y) {
           cell.style.borderColor = "#fff";
           cell.style.boxShadow = "inset 0 0 0 2px #fff";
@@ -483,7 +613,7 @@ function setupSequencer(vm) {
         cell.onclick = () => {
           // Select and toggle
           currentSelectedCell = { x, y };
-          vm.eval(`$sequencer.toggle_note(${stepIndex}, ${x}, ${y})`);
+          vm.eval(`$sequencer.toggle_note_in_block(${currentEditingTrack}, ${stepIndex}, ${x}, ${y})`);
           renderLattice(stepIndex);
         };
 
@@ -502,7 +632,7 @@ function setupSequencer(vm) {
       const delta = (e.key === "+" || e.key === "=") ? 1 : -1;
 
       try {
-        vm.eval(`$sequencer.shift_octave(${currentEditingStep}, ${currentSelectedCell.x}, ${currentSelectedCell.y}, ${delta})`);
+        vm.eval(`$sequencer.shift_octave_in_block(${currentEditingTrack}, ${currentEditingStep}, ${currentSelectedCell.x}, ${currentSelectedCell.y}, ${delta})`);
         renderLattice(currentEditingStep);
       } catch(err) { console.error(err); }
       return;
@@ -520,23 +650,25 @@ function setupSequencer(vm) {
       default: return;
     }
 
-    e.preventDefault();
-    try {
-      const result = vm.eval(`$sequencer.shift_step_notes(${currentEditingStep}, ${dx}, ${dy})`).toString();
-      if (result === "true") {
-        if (currentSelectedCell) {
-            currentSelectedCell.x += dx;
-            currentSelectedCell.y += dy;
-            // Bounds check
-            if (currentSelectedCell.x < -3) currentSelectedCell.x = -3;
-            if (currentSelectedCell.x > 3)  currentSelectedCell.x = 3;
-            if (currentSelectedCell.y < -2) currentSelectedCell.y = -2;
-            if (currentSelectedCell.y > 2)  currentSelectedCell.y = 2;
+    if (dx !== 0 || dy !== 0) {
+        e.preventDefault();
+        try {
+          const result = vm.eval(`$sequencer.shift_block_notes(${currentEditingTrack}, ${currentEditingStep}, ${dx}, ${dy})`).toString();
+          if (result === "true") {
+            if (currentSelectedCell) {
+                currentSelectedCell.x += dx;
+                currentSelectedCell.y += dy;
+                // Bounds check
+                if (currentSelectedCell.x < -3) currentSelectedCell.x = -3;
+                if (currentSelectedCell.x > 3)  currentSelectedCell.x = 3;
+                if (currentSelectedCell.y < -2) currentSelectedCell.y = -2;
+                if (currentSelectedCell.y > 2)  currentSelectedCell.y = 2;
+            }
+            renderLattice(currentEditingStep);
+          }
+        } catch(err) {
+          console.error(err);
         }
-        renderLattice(currentEditingStep);
-      }
-    } catch(err) {
-      console.error(err);
     }
   });
 }

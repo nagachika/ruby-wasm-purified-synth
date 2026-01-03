@@ -8,17 +8,40 @@ require "js"
 # e: 5th dim (11.0/4.0) - Y axis candidate
 NoteCoord = Struct.new(:a, :b, :c, :d, :e) do
   def to_json_object
-    # Convert to a basic hash/object for JS consumption
     { a: a, b: b, c: c, d: d, e: e }
   end
 end
 
+Block = Struct.new(:start_step, :length, :notes) do
+  def to_json_object
+    {
+      start: start_step,
+      length: length,
+      notes: notes.map(&:to_json_object)
+    }
+  end
+end
+
 class Track
-  attr_accessor :steps, :synth
+  attr_accessor :blocks, :synth
 
   def initialize(synth)
     @synth = synth
-    @steps = Array.new(16) { [] }
+    @blocks = []
+  end
+
+  def add_block(start_step, length)
+    block = Block.new(start_step, length, [])
+    @blocks << block
+    block
+  end
+
+  def remove_block_at(start_step)
+    @blocks.reject! { |b| b.start_step == start_step }
+  end
+  
+  def find_block_at(step)
+    @blocks.find { |b| b.start_step <= step && (b.start_step + b.length) > step }
   end
 end
 
@@ -27,13 +50,15 @@ class Sequencer
   attr_accessor :root_freq
   attr_accessor :y_axis_dim # 3, 4, or 5
 
-  attr_reader :is_playing, :current_step, :tracks, :current_track_index
+  attr_reader :is_playing, :current_step, :tracks, :current_track_index, :total_steps
 
   def initialize(ctx)
     @ctx = ctx
     @bpm = 120
     @root_freq = 261.63 # C4
-    @y_axis_dim = 3 # Default to 5-limit (3rd dim)
+    @y_axis_dim = 3
+
+    @total_steps = 128 # Default 4 bars (32 steps * 4)
 
     @tracks = []
     add_track # Add initial track
@@ -80,20 +105,89 @@ class Sequencer
     @tracks[@current_track_index]
   end
 
-  # Proxy methods to current track's steps
-  # Toggle a note at specific lattice coordinates (b, y_val)
-  # y_val corresponds to the dimension specified by @y_axis_dim
-  def toggle_note(step_index, b, y_val)
-    step = current_track.steps[step_index]
+  # --- Block Management ---
+
+  # Create a new block or merge into existing
+  def add_or_update_block(track_index, start_step, length)
+    track = @tracks[track_index]
+    return unless track
+
+    # Remove overlapping blocks? Or allow overlap? 
+    # For now, let's remove overlaps for simplicity in this mono-timbral-per-track context
+    # actually let's just push it. Overlaps are fine for polyphony.
+    
+    # Check if a block starts exactly here to update it?
+    existing = track.blocks.find { |b| b.start_step == start_step }
+    if existing
+      existing.length = length
+    else
+      track.add_block(start_step, length)
+    end
+  end
+  
+  def remove_block(track_index, start_step)
+    track = @tracks[track_index]
+    return unless track
+    track.remove_block_at(start_step)
+  end
+
+  # Used by Lattice Editor to edit specific block
+  def get_block_notes_json(track_index, start_step)
+    track = @tracks[track_index]
+    return "[]" unless track
+    
+    block = track.blocks.find { |b| b.start_step == start_step }
+    return "[]" unless block
+
+    json_items = block.notes.map do |n|
+      %|{ "a": #{n[:a]}, "b": #{n[:b]}, "c": #{n[:c]}, "d": #{n[:d]}, "e": #{n[:e]} }|
+    end
+    "[#{json_items.join(',')}]"
+  end
+
+  # Update notes in a block from Lattice Editor
+  def update_block_notes(track_index, start_step, notes_json)
+    track = @tracks[track_index]
+    return unless track
+    
+    block = track.blocks.find { |b| b.start_step == start_step }
+    return unless block
+
+    # Parse JSON (naive parsing or use JS)
+    # We can use JS.eval to parse and return array of objects
+    
+    # Clear existing
+    block.notes.clear
+    
+    # Re-populate
+    # Assuming notes_json is like [{a:0, b:0, ...}, ...]
+    js_notes = JS.eval("return #{notes_json}")
+    js_notes.each do |n|
+       # JS objects to Ruby structs
+       new_note = NoteCoord.new(
+         n[:a].to_f, 
+         n[:b].to_f, 
+         n[:c].to_f, 
+         n[:d].to_f, 
+         n[:e].to_f
+       )
+       block.notes << new_note
+    end
+  end
+  
+  # Helper for Lattice Editor logic (reusing existing toggling logic but on Block)
+  def toggle_note_in_block(track_index, start_step, b, y_val)
+    track = @tracks[track_index]
+    return unless track
+    block = track.blocks.find { |b| b.start_step == start_step }
+    return unless block
 
     t_c = (@y_axis_dim == 3) ? y_val : 0
     t_d = (@y_axis_dim == 4) ? y_val : 0
     t_e = (@y_axis_dim == 5) ? y_val : 0
 
-    # Find existing note with matching X(b) and Y(current dim) coordinates
-    # We ignore Octave(a) for existence check to allow toggling the "cell"
     existing_indices = []
-    step.each_with_index do |note, idx|
+    block.notes.each_with_index do |note, idx|
       match = (note.b == b)
       match &&= (note.c == t_c) if @y_axis_dim == 3
       match &&= (note.d == t_d) if @y_axis_dim == 4
@@ -102,24 +196,24 @@ class Sequencer
     end
 
     if existing_indices.any?
-      # Remove in reverse order
-      existing_indices.reverse_each { |i| step.delete_at(i) }
+      existing_indices.reverse_each { |i| block.notes.delete_at(i) }
     else
-      # Add new note with a=0
       new_note = NoteCoord.new(0, b, t_c, t_d, t_e)
-      step << new_note
+      block.notes << new_note
     end
   end
-
-  # Change octave (a) for notes in a specific cell
-  def shift_octave(step_index, b, y_val, delta)
-    step = current_track.steps[step_index]
+  
+  def shift_octave_in_block(track_index, start_step, b, y_val, delta)
+    track = @tracks[track_index]
+    return unless track
+    block = track.blocks.find { |b| b.start_step == start_step }
+    return unless block
 
     t_c = (@y_axis_dim == 3) ? y_val : 0
     t_d = (@y_axis_dim == 4) ? y_val : 0
     t_e = (@y_axis_dim == 5) ? y_val : 0
 
-    step.each do |note|
+    block.notes.each do |note|
       match = (note.b == b)
       match &&= (note.c == t_c) if @y_axis_dim == 3
       match &&= (note.d == t_d) if @y_axis_dim == 4
@@ -130,20 +224,17 @@ class Sequencer
       end
     end
   end
+  
+  def shift_block_notes(track_index, start_step, dx, dy)
+    track = @tracks[track_index]
+    return false unless track
+    block = track.blocks.find { |b| b.start_step == start_step }
+    return false unless block
+    return false if block.notes.empty?
 
-  # Shift all notes in a step by dx (b axis) and dy (y axis dim)
-  # Returns true if shift occurred, false if blocked by bounds
-  def shift_step_notes(step_index, dx, dy)
-    step = current_track.steps[step_index]
-    return false if step.empty?
-
-    # Check bounds first
-    # X bounds: -3 to 3
-    # Y bounds: -2 to 2 (for c, d, e depending on dim)
-    can_shift = step.all? do |n|
+    can_shift = block.notes.all? do |n|
       new_b = n.b + dx
       valid_x = new_b.between?(-3, 3)
-
       valid_y = true
       if @y_axis_dim == 3
         valid_y = (n.c + dy).between?(-2, 2)
@@ -152,14 +243,12 @@ class Sequencer
       elsif @y_axis_dim == 5
         valid_y = (n.e + dy).between?(-2, 2)
       end
-
       valid_x && valid_y
     end
 
     return false unless can_shift
 
-    # Apply shift
-    step.each do |n|
+    block.notes.each do |n|
       n.b += dx
       if @y_axis_dim == 3
         n.c += dy
@@ -169,36 +258,29 @@ class Sequencer
         n.e += dy
       end
     end
-
     true
   end
 
-  # Return notes for a step to JS for rendering
-  # Returns JSON string
-  def get_step_notes_json(step_index)
-    notes = current_track.steps[step_index].map do |n|
-      n.to_json_object
+  def get_track_blocks_json(track_index)
+    track = @tracks[track_index]
+    return "[]" unless track
+    
+    # Manual JSON construction
+    items = track.blocks.map do |b|
+       # notes count is enough for rendering? 
+       # or maybe send if it has notes to color it
+       %|{ "start": #{b.start_step}, "length": #{b.length}, "notes_count": #{b.notes.length} }|
     end
-    json_items = notes.map do |n|
-      %|{ "a": #{n[:a]}, "b": #{n[:b]}, "c": #{n[:c]}, "d": #{n[:d]}, "e": #{n[:e]} }|
-    end
-    "[#{json_items.join(',')}]"
+    "[#{items.join(',')}]"
   end
 
-  def get_track_step_notes_json(track_index, step_index)
-    return "[]" if track_index < 0 || track_index >= @tracks.length
-    notes = @tracks[track_index].steps[step_index].map do |n|
-      n.to_json_object
-    end
-    json_items = notes.map do |n|
-      %|{ "a": #{n[:a]}, "b": #{n[:b]}, "c": #{n[:c]}, "d": #{n[:d]}, "e": #{n[:e]} }|
-    end
-    "[#{json_items.join(',')}]"
-  end
+  # --- Playback ---
 
   def start
     return if @is_playing
     @is_playing = true
+    # Don't reset current step if we want pause/resume behavior?
+    # For now restart from 0
     @current_step = 0
     @next_note_time = @ctx[:currentTime].to_f + 0.1
 
@@ -225,15 +307,30 @@ class Sequencer
   end
 
   def schedule_step(step_index, time)
+    # 1/32 measure resolution
+    # 1 bar = 4 beats
+    # 32 steps = 4 beats -> 1 step = 1/8 beat
     seconds_per_beat = 60.0 / @bpm
-    step_duration = seconds_per_beat / 4.0
+    step_duration_sec = seconds_per_beat / 8.0
 
     @tracks.each do |track|
-      notes = track.steps[step_index]
-      if notes && !notes.empty?
-        notes.each do |note|
+      # Find blocks starting at this step
+      blocks = track.blocks.select { |b| b.start_step == step_index }
+      
+      blocks.each do |block|
+        next if block.notes.empty?
+        
+        duration = block.length * step_duration_sec
+        # Slightly reduce for articulation? Or full legato?
+        # User asked for connecting sections... full legato might be desired if butt-joined.
+        # But let's keep 0.8 for articulation for now unless legato is explicitly requested
+        # Actually, if we want "one long note", the block handles it.
+        # Between blocks, articulation is good.
+        play_duration = duration # * 0.95? 
+        
+        block.notes.each do |note|
           freq = calculate_freq(note)
-          track.synth.schedule_note(freq, time, step_duration * 0.8)
+          track.synth.schedule_note(freq, time, play_duration)
         end
       end
     end
@@ -253,8 +350,13 @@ class Sequencer
 
   def advance_step
     seconds_per_beat = 60.0 / @bpm
-    @next_note_time += 0.25 * seconds_per_beat
+    # 1 step = 1/32 bar = 1/8 beat
+    @next_note_time += (seconds_per_beat / 8.0)
+    
     @current_step += 1
-    @current_step = 0 if @current_step == 16
+    # Loop at total_steps
+    if @current_step >= @total_steps
+      @current_step = 0 
+    end
   end
 end
