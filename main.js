@@ -244,6 +244,8 @@ function setupSequencer(vm) {
   const addTrackBtn = document.getElementById("add_track_btn");
   const bpmInput = document.getElementById("bpm");
   const bpmDisplay = document.getElementById("val_bpm");
+  const measuresInput = document.getElementById("measures");
+  const measuresDisplay = document.getElementById("val_measures");
   const rootFreqInput = document.getElementById("root_freq");
 
   // Modal Elements
@@ -502,10 +504,16 @@ function setupSequencer(vm) {
         playBtn.textContent = "Stop";
         playBtn.style.background = "#dc3545";
       }
-    } catch (e) {
-      console.error("Sequencer play/stop error:", e);
-    }
+    } catch (e) { console.error("Sequencer play/stop error:", e); }
   };
+
+  measuresInput.addEventListener("input", () => {
+    measuresDisplay.textContent = measuresInput.value;
+    try {
+      vm.eval(`$sequencer.total_bars = ${measuresInput.value}`);
+      renderSequencer(); // Re-render grid
+    } catch (e) { console.error(e); }
+  });
 
   bpmInput.addEventListener("input", () => {
     bpmDisplay.textContent = bpmInput.value;
@@ -550,7 +558,17 @@ function setupSequencer(vm) {
   function openEditor(trackIndex, stepIndex) {
     currentEditingTrack = trackIndex;
     currentEditingStep = stepIndex; // acts as Block ID (Start Step)
-    modalStepNum.textContent = `T${trackIndex + 1} : Block @ ${stepIndex}`;
+    
+    // Get block info
+    let blockLen = 1;
+    try {
+        const blocksJson = vm.eval(`$sequencer.get_track_blocks_json(${trackIndex})`).toString();
+        const blocks = JSON.parse(blocksJson);
+        const b = blocks.find(x => x.start === stepIndex);
+        if (b) blockLen = b.length;
+    } catch(e) {}
+
+    modalStepNum.textContent = `T${trackIndex + 1} : Block @ ${stepIndex} (Len: ${blockLen})`;
     modal.style.display = "flex";
 
     try {
