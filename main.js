@@ -327,8 +327,35 @@ function setupSequencer(vm) {
         removeBtn.style.cursor = "pointer";
         removeBtn.onclick = () => removeTrack(t);
 
+        // Mute Button
+        const muteBtn = document.createElement("button");
+        let isMuted = false;
+        try {
+            isMuted = vm.eval(`$sequencer.tracks[${t}].mute`).toString() === "true";
+        } catch(e) {}
+        muteBtn.textContent = isMuted ? "🔇" : "🔊";
+        muteBtn.style.padding = "4px";
+        muteBtn.style.fontSize = "0.8rem";
+        muteBtn.style.background = isMuted ? "#6c757d" : "#444";
+        muteBtn.style.color = "white";
+        muteBtn.style.border = "1px solid #555";
+        muteBtn.style.cursor = "pointer";
+        muteBtn.onclick = () => {
+            try {
+                const newVal = !isMuted;
+                vm.eval(`$sequencer.tracks[${t}].mute = ${newVal}`);
+                renderSequencer();
+            } catch(e) {}
+        };
+
+        const topRow = document.createElement("div");
+        topRow.style.display = "flex";
+        topRow.style.gap = "2px";
+        topRow.appendChild(removeBtn);
+        topRow.appendChild(muteBtn);
+
         controlDiv.appendChild(labelBtn);
-        controlDiv.appendChild(removeBtn);
+        controlDiv.appendChild(topRow);
         row.appendChild(controlDiv);
 
         // Timeline Container (Scrollable)
@@ -397,9 +424,12 @@ function setupSequencer(vm) {
             const rect = grid.getBoundingClientRect();
             const x = e.clientX - rect.left;
             let currentStep = Math.floor(x / CELL_WIDTH);
-            if (currentStep < drawStartStep) currentStep = drawStartStep; // No backwards drawing yet
             
-            const len = currentStep - drawStartStep + 1;
+            const start = Math.min(drawStartStep, currentStep);
+            const end = Math.max(drawStartStep, currentStep);
+            const len = end - start + 1;
+            
+            ghostBlock.style.left = `${start * CELL_WIDTH}px`;
             ghostBlock.style.width = `${len * CELL_WIDTH}px`;
         };
         
@@ -433,7 +463,7 @@ function setupSequencer(vm) {
                     openEditor(t, b.start);
                 };
                 
-                // Right click to delete?
+                // Right click to delete
                 blockDiv.oncontextmenu = (e) => {
                     e.preventDefault();
                     if (confirm("Delete block?")) {
@@ -456,10 +486,12 @@ function setupSequencer(vm) {
   window.addEventListener("mouseup", () => {
     if (isDrawing) {
         if (ghostBlock) {
+            const left = parseInt(ghostBlock.style.left);
             const width = parseInt(ghostBlock.style.width);
+            const startStep = Math.round(left / CELL_WIDTH);
             const steps = Math.round(width / CELL_WIDTH);
             try {
-                vm.eval(`$sequencer.add_or_update_block(${drawTrackIndex}, ${drawStartStep}, ${steps})`);
+                vm.eval(`$sequencer.add_or_update_block(${drawTrackIndex}, ${startStep}, ${steps})`);
                 renderSequencer();
             } catch(e) { console.error(e); }
             ghostBlock = null;

@@ -23,11 +23,12 @@ Block = Struct.new(:start_step, :length, :notes) do
 end
 
 class Track
-  attr_accessor :blocks, :synth
+  attr_accessor :blocks, :synth, :mute
 
   def initialize(synth)
     @synth = synth
     @blocks = []
+    @mute = false
   end
 
   def add_block(start_step, length)
@@ -322,6 +323,7 @@ class Sequencer
     step_duration_sec = seconds_per_beat / 8.0
 
     @tracks.each do |track|
+      next if track.mute
       # Find blocks starting at this step
       blocks = track.blocks.select { |b| b.start_step == step_index }
       
