@@ -310,4 +310,59 @@ class Synthesizer
     voice = Voice.new(@ctx, freq, self, start_time, duration)
     voice.start
   end
+
+  # --- Preset Management ---
+
+  def export_settings
+    # Create a JSON string manually to avoid dependency on 'json' gem if not present
+    # Using %|| syntax to avoid quote escaping hell
+    settings = [
+      %|"osc_type": "#{@osc_type}"|,
+      %|"filter_type": "#{@filter_type}"|,
+      %|"cutoff": #{@cutoff}|,
+      %|"resonance": #{@resonance}|,
+      %|"attack": #{@attack}|,
+      %|"decay": #{@decay}|,
+      %|"sustain": #{@sustain}|,
+      %|"release": #{@release}|,
+      %|"lfo_on": #{@lfo_on}|,
+      %|"lfo_waveform": "#{@lfo_waveform}"|,
+      %|"lfo_rate": #{@lfo_rate}|,
+      %|"lfo_depth": #{@lfo_depth}|,
+      %|"delay_time": #{@delay_time}|,
+      %|"delay_feedback": #{@delay_feedback}|,
+      %|"delay_mix": #{@delay_mix}|,
+      %|"reverb_seconds": #{@reverb_seconds}|,
+      %|"reverb_mix": #{@reverb_mix}|
+    ]
+    "{#{settings.join(',')}}"
+  end
+
+  def import_settings(json_str)
+    # Parse JSON using JavaScript engine
+    data = JS.eval("return JSON.parse('#{json_str}')")
+
+    # Update attributes and AudioNodes via setters
+    self.osc_type = data[:osc_type].to_s
+    self.filter_type = data[:filter_type].to_s
+    self.cutoff = data[:cutoff].to_f
+    self.resonance = data[:resonance].to_f
+
+    self.attack = data[:attack].to_f
+    self.decay = data[:decay].to_f
+    self.sustain = data[:sustain].to_f
+    self.release = data[:release].to_f
+
+    self.lfo_on = data[:lfo_on] == true # JS boolean to Ruby boolean
+    self.lfo_waveform = data[:lfo_waveform].to_s
+    self.lfo_rate = data[:lfo_rate].to_f
+    self.lfo_depth = data[:lfo_depth].to_f
+
+    self.delay_time = data[:delay_time].to_f
+    self.delay_feedback = data[:delay_feedback].to_f
+    self.delay_mix = data[:delay_mix].to_f
+
+    self.reverb_seconds = data[:reverb_seconds].to_f
+    self.reverb_mix = data[:reverb_mix].to_f
+  end
 end

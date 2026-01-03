@@ -69,7 +69,7 @@ const main = async () => {
     }
     const scriptText = await scriptRes.text();
     vm.eval(scriptText);
-    
+
     // Load Sequencer script
     const seqRes = await fetch(`src/sequencer.rb?_=${Date.now()}`);
     if (seqRes.ok) {
@@ -82,7 +82,7 @@ const main = async () => {
     // Instantiate Synthesizer
     vm.eval("$synth = Synthesizer.new(JS.eval('return window.audioCtx;'))");
     console.log("Synthesizer initialized");
-    
+
     // Instantiate Sequencer
     vm.eval("$sequencer = Sequencer.new($synth, JS.eval('return window.audioCtx;'))");
 
@@ -90,8 +90,117 @@ const main = async () => {
     setupKeyboard(vm);
     setupVisualizer(vm);
     setupSequencer(vm);
+    setupPresets(vm);
   };
 };
+
+function setupPresets(vm) {
+  const nameInput = document.getElementById("preset_name");
+  const saveBtn = document.getElementById("save_preset");
+  const listSelect = document.getElementById("preset_list");
+  const loadBtn = document.getElementById("load_preset");
+  const deleteBtn = document.getElementById("delete_preset");
+
+  const STORAGE_KEY = "ruby_synth_presets";
+
+  function getPresets() {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  }
+
+  function savePresets(presets) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(presets));
+    updateList();
+  }
+
+  function updateList() {
+    const presets = getPresets();
+    listSelect.innerHTML = '<option value="">-- Select Preset --</option>';
+    Object.keys(presets).forEach(name => {
+      const opt = document.createElement("option");
+      opt.value = name;
+      opt.textContent = name;
+      listSelect.appendChild(opt);
+    });
+  }
+
+  updateList();
+
+  saveBtn.onclick = () => {
+    const name = nameInput.value.trim();
+    if (!name) return alert("Please enter a preset name.");
+
+    try {
+      const json = vm.eval("$synth.export_settings").toString();
+      const presets = getPresets();
+      presets[name] = json;
+      savePresets(presets);
+      alert(`Preset "${name}" saved!`);
+      nameInput.value = "";
+    } catch(e) {
+      console.error(e);
+      alert("Failed to save preset.");
+    }
+  };
+
+  loadBtn.onclick = () => {
+    const name = listSelect.value;
+    if (!name) return;
+
+    const presets = getPresets();
+    const json = presets[name];
+    if (!json) return;
+
+    try {
+      // Load into Ruby
+      // We pass the JSON string directly. Note: JSON string contains quotes, so we need to be careful with eval string.
+      // But import_settings expects a string.
+      // Let's attach it to window temp var to be safe
+      window._tempPresetJson = json;
+      vm.eval(`$synth.import_settings(JS.global[:_tempPresetJson])`);
+
+      // Update UI elements to match
+      const data = JSON.parse(json);
+
+      // Map JSON keys to UI IDs
+      // Our UI IDs match the JSON keys mostly
+      for (const [key, val] of Object.entries(data)) {
+        const el = document.getElementById(key);
+        if (el) {
+           if (el.type === "checkbox") {
+             el.checked = val;
+           } else {
+             el.value = val;
+           }
+           // Update display span if exists
+           const display = document.getElementById(`val_${key}`);
+           if (display) {
+             let text = val;
+             if (key === 'cutoff') text += ' Hz';
+             if (key.includes('time') || key.includes('attack') || key.includes('decay') || key.includes('release') || key.includes('seconds')) text += ' s';
+             if (key === 'lfo_rate') text += ' Hz';
+             display.textContent = text;
+           }
+        }
+      }
+
+      // Also update viz mode if needed? No, separate.
+    } catch(e) {
+      console.error(e);
+      alert("Failed to load preset.");
+    }
+  };
+
+  deleteBtn.onclick = () => {
+    const name = listSelect.value;
+    if (!name) return;
+    if (!confirm(`Delete preset "${name}"?`)) return;
+
+    const presets = getPresets();
+    delete presets[name];
+    savePresets(presets);
+  };
+}
 
 // Define global callback immediately
 window.updatePlayhead = (stepIndex) => {
@@ -115,7 +224,7 @@ function setupSequencer(vm) {
   const bpmInput = document.getElementById("bpm");
   const bpmDisplay = document.getElementById("val_bpm");
   const rootFreqInput = document.getElementById("root_freq");
-  
+
   // Modal Elements
   const modal = document.getElementById("grid-modal");
   const closeModal = document.getElementById("close-modal");
@@ -136,11 +245,11 @@ function setupSequencer(vm) {
     stepBtn.style.cursor = "pointer";
     stepBtn.style.border = "2px solid #555";
     stepBtn.dataset.index = i;
-    
+
     stepBtn.onclick = () => {
       openEditor(i);
     };
-    
+
     grid.appendChild(stepBtn);
   }
 
@@ -187,10 +296,10 @@ function setupSequencer(vm) {
     modal.style.display = "none";
     currentEditingStep = null;
     currentSelectedCell = null;
-    
+
     updateGridVisuals();
   };
-  
+
   function updateGridVisuals() {
     for (let i = 0; i < 16; i++) {
       const stepBtn = grid.children[i];
@@ -210,23 +319,23 @@ function setupSequencer(vm) {
     currentEditingStep = stepIndex;
     modalStepNum.textContent = stepIndex + 1;
     modal.style.display = "flex";
-    
+
     try {
       const currentDim = vm.eval("$sequencer.y_axis_dim").toString();
       yAxisSelect.value = currentDim;
     } catch(e) {}
-    
+
     renderLattice(stepIndex);
   }
 
   function renderLattice(stepIndex) {
     latticeGrid.innerHTML = "";
-    
+
     try {
       const json = vm.eval(`$sequencer.get_step_notes_json(${stepIndex})`).toString();
       currentStepNotes = JSON.parse(json);
     } catch(e) { console.error(e); return; }
-    
+
     const currentDim = parseInt(yAxisSelect.value);
 
     // Grid: X: -3 to 3 (7 cols), Y: 2 to -2 (5 rows)
@@ -243,14 +352,14 @@ function setupSequencer(vm) {
         cell.style.fontSize = "0.8rem";
         cell.style.border = "1px solid #333";
         cell.style.userSelect = "none";
-        
+
         // Selection highlight
         if (currentSelectedCell && currentSelectedCell.x === x && currentSelectedCell.y === y) {
           cell.style.borderColor = "#fff";
           cell.style.boxShadow = "inset 0 0 0 2px #fff";
           cell.style.zIndex = "10";
         }
-        
+
         // Find notes
         const note = currentStepNotes.find(n => {
             let match = (n.b === x);
@@ -273,32 +382,32 @@ function setupSequencer(vm) {
           vm.eval(`$sequencer.toggle_note(${stepIndex}, ${x}, ${y})`);
           renderLattice(stepIndex);
         };
-        
+
         latticeGrid.appendChild(cell);
       }
     }
   }
-  
+
   // Keyboard handler for Modal
   window.addEventListener("keydown", (e) => {
     if (modal.style.display === "none" || currentEditingStep === null) return;
-    
+
     // Octave Shift (+/-)
     if (e.key === "+" || e.key === "=" || e.key === "-") {
       if (!currentSelectedCell) return;
       const delta = (e.key === "+" || e.key === "=") ? 1 : -1;
-      
+
       try {
         vm.eval(`$sequencer.shift_octave(${currentEditingStep}, ${currentSelectedCell.x}, ${currentSelectedCell.y}, ${delta})`);
         renderLattice(currentEditingStep);
       } catch(err) { console.error(err); }
       return;
     }
-    
+
     // Grid Shift (Arrows)
     let dx = 0;
     let dy = 0;
-    
+
     switch(e.key) {
       case "ArrowUp":    dy = 1; break;
       case "ArrowDown":  dy = -1; break;
@@ -306,7 +415,7 @@ function setupSequencer(vm) {
       case "ArrowRight": dx = 1; break;
       default: return;
     }
-    
+
     e.preventDefault();
     try {
       const result = vm.eval(`$sequencer.shift_step_notes(${currentEditingStep}, ${dx}, ${dy})`).toString();
@@ -331,7 +440,7 @@ function setupSequencer(vm) {
 function setupVisualizer(vm) {
   const canvas = document.getElementById("visualizer");
   const canvasCtx = canvas.getContext("2d");
-  
+
   vm.eval("JS.global[:synthAnalyser] = $synth.analyser_node");
   const analyser = window.synthAnalyser;
 
@@ -397,7 +506,7 @@ function setupUI(vm) {
   uiIds.forEach(id => {
     const el = document.getElementById(id);
     const display = document.getElementById(`val_${id}`);
-    
+
     updateParam(vm, id, el);
 
     el.addEventListener("input", () => {
@@ -418,9 +527,9 @@ function updateParam(vm, id, el) {
   if (el.type === "checkbox") {
     val = el.checked ? "true" : "false";
   } else if (el.type === "range") {
-    val = el.value; 
+    val = el.value;
   } else {
-    val = `"${el.value}"`; 
+    val = `"${el.value}"`;
   }
 
   if (el.type === "range") {
