@@ -3,6 +3,8 @@ import { DefaultRubyVM } from "https://cdn.jsdelivr.net/npm/@ruby/wasm-wasi@2.7.
 const startBtn = document.getElementById("start-btn");
 const overlay = document.getElementById("start-overlay");
 
+const CELL_WIDTH = 10; // px
+
 // UI Elements
 const uiIds = [
   "osc_type", "filter_type", "cutoff", "resonance",
@@ -223,7 +225,7 @@ window.updatePlayhead = (stepIndex) => {
      cursor.style.width = "2px";
      cursor.style.background = "#fff";
      cursor.style.boxShadow = "0 0 4px #fff";
-     cursor.style.left = `${stepIndex * 15}px`; // 15 = CELL_WIDTH (hardcoded in renderSequencer scope, need to match)
+     cursor.style.left = `${stepIndex * CELL_WIDTH}px`; 
      cursor.style.zIndex = "10";
      cursor.style.pointerEvents = "none";
      grid.appendChild(cursor);
@@ -231,7 +233,7 @@ window.updatePlayhead = (stepIndex) => {
      // Auto-scroll if needed?
      // Optional: simple check
      const wrapper = grid.parentElement;
-     const left = stepIndex * 15;
+     const left = stepIndex * CELL_WIDTH;
      if (left < wrapper.scrollLeft || left > wrapper.scrollLeft + wrapper.clientWidth) {
          wrapper.scrollLeft = left - wrapper.clientWidth / 2;
      }
@@ -265,7 +267,6 @@ function setupSequencer(vm) {
   let drawStartStep = 0;
   let drawTrackIndex = -1;
   let ghostBlock = null;
-  const CELL_WIDTH = 15; // px
 
   function renderSequencer() {
     rowsContainer.innerHTML = "";
@@ -334,7 +335,7 @@ function setupSequencer(vm) {
         const timelineWrapper = document.createElement("div");
         timelineWrapper.className = "timeline-wrapper";
         timelineWrapper.style.flexGrow = "1";
-        timelineWrapper.style.overflowX = "auto";
+        timelineWrapper.style.overflowX = "scroll";
         timelineWrapper.style.overflowY = "hidden";
         timelineWrapper.style.position = "relative";
         timelineWrapper.style.background = "#222";
