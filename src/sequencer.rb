@@ -99,15 +99,15 @@ class Sequencer
   def shift_step_notes(step_index, dx, dy)
     step = @steps[step_index]
     return false if step.empty?
-    
+
     # Check bounds first
     # X bounds: -3 to 3
     # Y bounds: -2 to 2 (for c, d, e depending on dim)
-    
+
     can_shift = step.all? do |n|
       new_b = n.b + dx
       valid_x = new_b.between?(-3, 3)
-      
+
       valid_y = true
       if @y_axis_dim == 3
         valid_y = (n.c + dy).between?(-2, 2)
@@ -116,12 +116,12 @@ class Sequencer
       elsif @y_axis_dim == 5
         valid_y = (n.e + dy).between?(-2, 2)
       end
-      
+
       valid_x && valid_y
     end
-    
+
     return false unless can_shift
-    
+
     # Apply shift
     step.each do |n|
       n.b += dx
@@ -133,7 +133,7 @@ class Sequencer
         n.e += dy
       end
     end
-    
+
     true
   end
 
