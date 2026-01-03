@@ -94,6 +94,49 @@ class Sequencer
     end
   end
 
+  # Shift all notes in a step by dx (b axis) and dy (y axis dim)
+  # Returns true if shift occurred, false if blocked by bounds
+  def shift_step_notes(step_index, dx, dy)
+    step = @steps[step_index]
+    return false if step.empty?
+    
+    # Check bounds first
+    # X bounds: -3 to 3
+    # Y bounds: -2 to 2 (for c, d, e depending on dim)
+    
+    can_shift = step.all? do |n|
+      new_b = n.b + dx
+      valid_x = new_b.between?(-3, 3)
+      
+      valid_y = true
+      if @y_axis_dim == 3
+        valid_y = (n.c + dy).between?(-2, 2)
+      elsif @y_axis_dim == 4
+        valid_y = (n.d + dy).between?(-2, 2)
+      elsif @y_axis_dim == 5
+        valid_y = (n.e + dy).between?(-2, 2)
+      end
+      
+      valid_x && valid_y
+    end
+    
+    return false unless can_shift
+    
+    # Apply shift
+    step.each do |n|
+      n.b += dx
+      if @y_axis_dim == 3
+        n.c += dy
+      elsif @y_axis_dim == 4
+        n.d += dy
+      elsif @y_axis_dim == 5
+        n.e += dy
+      end
+    end
+    
+    true
+  end
+
   # Return notes for a step to JS for rendering
   # Returns JSON string
   def get_step_notes_json(step_index)

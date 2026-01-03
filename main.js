@@ -253,24 +253,51 @@ function setupSequencer(vm) {
             return match;
         });
 
-        if (note) {
-          cell.style.background = "#4dabf7";
-          if (note.a > 0) cell.textContent = `↑${note.a}`;
-          else if (note.a < 0) cell.textContent = `↓${Math.abs(note.a)}`;
-          else cell.textContent = "0";
+                if (note) {
+                  cell.style.background = "#4dabf7";
+                  if (note.a > 0) cell.textContent = `↑${note.a}`;
+                  else if (note.a < 0) cell.textContent = `↓${Math.abs(note.a)}`;
+                  // Hide 0
+                }
+        
+                cell.onclick = () => {
+                  vm.eval(`$sequencer.toggle_note(${stepIndex}, ${x}, ${y})`);
+                  renderLattice(stepIndex);
+                };
+                
+                latticeGrid.appendChild(cell);
+              }
+            }
+          }
+        
+          // Keyboard handler for Modal (Shift Grid)
+          window.addEventListener("keydown", (e) => {
+            if (modal.style.display === "none" || currentEditingStep === null) return;
+            
+            let dx = 0;
+            let dy = 0;
+            
+            switch(e.key) {
+              case "ArrowUp":    dy = 1; break;
+              case "ArrowDown":  dy = -1; break;
+              case "ArrowLeft":  dx = -1; break;
+              case "ArrowRight": dx = 1; break;
+              default: return;
+            }
+            
+            e.preventDefault();
+            try {
+              // Call Ruby shift method
+              // We pass dx, dy. The method checks bounds.
+              const result = vm.eval(`$sequencer.shift_step_notes(${currentEditingStep}, ${dx}, ${dy})`).toString();
+              if (result === "true") {
+                renderLattice(currentEditingStep);
+              }
+            } catch(err) {
+              console.error(err);
+            }
+          });
         }
-
-        cell.onclick = () => {
-          vm.eval(`$sequencer.toggle_note(${stepIndex}, ${x}, ${y})`);
-          renderLattice(stepIndex);
-        };
-
-        latticeGrid.appendChild(cell);
-      }
-    }
-  }
-}
-
 function setupVisualizer(vm) {
   const canvas = document.getElementById("visualizer");
   const canvasCtx = canvas.getContext("2d");
