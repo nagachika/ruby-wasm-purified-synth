@@ -70,6 +70,14 @@ class Sequencer
     @lookahead_ms = 25.0
   end
 
+  def total_bars=(bars)
+    @total_steps = bars.to_i * 32
+  end
+  
+  def total_bars
+    @total_steps / 32
+  end
+
   def add_track
     synth = Synthesizer.new(@ctx)
     track = Track.new(synth)
