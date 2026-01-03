@@ -317,9 +317,9 @@ function setupSequencer(vm) {
 
         // Remove Button
         const removeBtn = document.createElement("button");
-        removeBtn.textContent = "Del"; 
-        removeBtn.style.padding = "2px";
-        removeBtn.style.fontSize = "0.7rem";
+        removeBtn.textContent = "🗑"; 
+        removeBtn.style.padding = "4px";
+        removeBtn.style.fontSize = "0.8rem";
         removeBtn.style.background = "#dc3545";
         removeBtn.style.color = "white";
         removeBtn.style.border = "none";
@@ -351,17 +351,23 @@ function setupSequencer(vm) {
 
         // Draw Background Lines (every 4 steps = 1 beat, every 32 steps = 1 bar)
         grid.style.backgroundImage = `
-            repeating-linear-gradient(90deg, 
-                #333 0px, 
-                #333 1px, 
-                transparent 1px, 
-                transparent ${CELL_WIDTH}px
+            repeating-linear-gradient(90deg,
+                #888 0px,
+                #888 1px,
+                transparent 1px,
+                transparent ${CELL_WIDTH * 32}px
             ),
             repeating-linear-gradient(90deg,
                 #555 0px,
                 #555 1px,
                 transparent 1px, 
                 transparent ${CELL_WIDTH * 8}px
+            ),
+            repeating-linear-gradient(90deg, 
+                #333 0px, 
+                #333 1px, 
+                transparent 1px, 
+                transparent ${CELL_WIDTH}px
             )
         `;
 
