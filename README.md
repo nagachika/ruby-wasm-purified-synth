@@ -1,4 +1,4 @@
-# Ruby/WASM Web Synth
+# Ruby/WASM Purified Synth
 
 A polyphonic subtractive synthesizer running entirely in the browser using Ruby/WASM and the Web Audio API.
 

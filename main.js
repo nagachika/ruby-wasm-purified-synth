@@ -79,12 +79,13 @@ const main = async () => {
       console.error("Failed to fetch src/sequencer.rb");
     }
 
-    // Instantiate Synthesizer
-    vm.eval("$synth = Synthesizer.new(JS.eval('return window.audioCtx;'))");
-    console.log("Synthesizer initialized");
+    // Instantiate Sequencer (it will create the first track and its synth)
+    vm.eval("$sequencer = Sequencer.new(JS.eval('return window.audioCtx;'))");
 
-    // Instantiate Sequencer
-    vm.eval("$sequencer = Sequencer.new($synth, JS.eval('return window.audioCtx;'))");
+    // Set global $synth to the first track's synth for UI binding
+    vm.eval("$synth = $sequencer.current_track.synth");
+
+    console.log("Sequencer and Synthesizer initialized");
 
     setupUI(vm);
     setupKeyboard(vm);
@@ -93,6 +94,32 @@ const main = async () => {
     setupPresets(vm);
   };
 };
+
+function updateUIFromSettings(json) {
+  try {
+    const data = JSON.parse(json);
+    for (const [key, val] of Object.entries(data)) {
+      const el = document.getElementById(key);
+      if (el) {
+          if (el.type === "checkbox") {
+            el.checked = val;
+          } else {
+            el.value = val;
+          }
+          const display = document.getElementById(`val_${key}`);
+          if (display) {
+            let text = val;
+            if (key === 'cutoff') text += ' Hz';
+            if (key.includes('time') || key.includes('attack') || key.includes('decay') || key.includes('release') || key.includes('seconds')) text += ' s';
+            if (key === 'lfo_rate') text += ' Hz';
+            display.textContent = text;
+          }
+      }
+    }
+  } catch(e) {
+    console.error("Error updating UI from settings:", e);
+  }
+}
 
 function setupPresets(vm) {
   const nameInput = document.getElementById("preset_name");
@@ -153,38 +180,11 @@ function setupPresets(vm) {
 
     try {
       // Load into Ruby
-      // We pass the JSON string directly. Note: JSON string contains quotes, so we need to be careful with eval string.
-      // But import_settings expects a string.
-      // Let's attach it to window temp var to be safe
       window._tempPresetJson = json;
       vm.eval(`$synth.import_settings(JS.global[:_tempPresetJson])`);
 
-      // Update UI elements to match
-      const data = JSON.parse(json);
-
-      // Map JSON keys to UI IDs
-      // Our UI IDs match the JSON keys mostly
-      for (const [key, val] of Object.entries(data)) {
-        const el = document.getElementById(key);
-        if (el) {
-           if (el.type === "checkbox") {
-             el.checked = val;
-           } else {
-             el.value = val;
-           }
-           // Update display span if exists
-           const display = document.getElementById(`val_${key}`);
-           if (display) {
-             let text = val;
-             if (key === 'cutoff') text += ' Hz';
-             if (key.includes('time') || key.includes('attack') || key.includes('decay') || key.includes('release') || key.includes('seconds')) text += ' s';
-             if (key === 'lfo_rate') text += ' Hz';
-             display.textContent = text;
-           }
-        }
-      }
-
-      // Also update viz mode if needed? No, separate.
+      // Update UI
+      updateUIFromSettings(json);
     } catch(e) {
       console.error(e);
       alert("Failed to load preset.");
@@ -202,25 +202,29 @@ function setupPresets(vm) {
   };
 }
 
-// Define global callback immediately
+// Global callback for Playhead
 window.updatePlayhead = (stepIndex) => {
-  const grid = document.getElementById("sequencer-grid");
-  if (!grid) return;
-  const steps = grid.children;
-  for (let i = 0; i < steps.length; i++) {
-    if (i === stepIndex) {
-      steps[i].style.borderColor = "#fff";
-      steps[i].style.boxShadow = "0 0 5px #fff";
-    } else {
-      steps[i].style.borderColor = "#555";
-      steps[i].style.boxShadow = "none";
-    }
+  const container = document.getElementById("sequencer-rows");
+  if (!container) return;
+  const rows = container.children;
+  for (const row of rows) {
+     const steps = row.querySelectorAll(".step-btn");
+     for (let i = 0; i < steps.length; i++) {
+        if (i === stepIndex) {
+            steps[i].style.borderColor = "#fff";
+            steps[i].style.boxShadow = "0 0 5px #fff";
+        } else {
+            steps[i].style.borderColor = "#555";
+            steps[i].style.boxShadow = "none";
+        }
+     }
   }
 };
 
 function setupSequencer(vm) {
-  const grid = document.getElementById("sequencer-grid");
+  const rowsContainer = document.getElementById("sequencer-rows");
   const playBtn = document.getElementById("seq-play-btn");
+  const addTrackBtn = document.getElementById("add_track_btn");
   const bpmInput = document.getElementById("bpm");
   const bpmDisplay = document.getElementById("val_bpm");
   const rootFreqInput = document.getElementById("root_freq");
@@ -232,26 +236,129 @@ function setupSequencer(vm) {
   const yAxisSelect = document.getElementById("y_axis_dim");
   const latticeGrid = document.getElementById("lattice-grid");
 
+  let currentEditingTrack = null;
   let currentEditingStep = null;
   let currentStepNotes = [];
   let currentSelectedCell = null; // {x, y}
 
-  // Initialize Sequencer Grid
-  for (let i = 0; i < 16; i++) {
-    const stepBtn = document.createElement("div");
-    stepBtn.style.height = "40px";
-    stepBtn.style.background = "#444";
-    stepBtn.style.borderRadius = "4px";
-    stepBtn.style.cursor = "pointer";
-    stepBtn.style.border = "2px solid #555";
-    stepBtn.dataset.index = i;
+  function renderSequencer() {
+    rowsContainer.innerHTML = "";
+    let tracksCount = 0;
+    let currentTrackIndex = 0;
+    try {
+        tracksCount = parseInt(vm.eval("$sequencer.tracks.length").toString());
+        currentTrackIndex = parseInt(vm.eval("$sequencer.current_track_index").toString());
+    } catch(e) { return; }
 
-    stepBtn.onclick = () => {
-      openEditor(i);
-    };
+    for (let t = 0; t < tracksCount; t++) {
+        const row = document.createElement("div");
+        row.style.display = "flex";
+        row.style.gap = "5px";
+        row.style.alignItems = "center";
 
-    grid.appendChild(stepBtn);
+        // Track Controls
+        const controlDiv = document.createElement("div");
+        controlDiv.style.display = "flex";
+        controlDiv.style.gap = "5px";
+        controlDiv.style.minWidth = "120px";
+
+        // Select Button / Label
+        const labelBtn = document.createElement("button");
+        labelBtn.textContent = `Track ${t + 1}`;
+        labelBtn.style.flexGrow = "1";
+        labelBtn.style.padding = "5px";
+        labelBtn.style.border = "1px solid #555";
+        labelBtn.style.cursor = "pointer";
+        if (t === currentTrackIndex) {
+            labelBtn.style.background = "#007bff";
+            labelBtn.style.color = "white";
+        } else {
+            labelBtn.style.background = "#333";
+            labelBtn.style.color = "#ccc";
+        }
+        labelBtn.onclick = () => selectTrack(t);
+
+        // Remove Button
+        const removeBtn = document.createElement("button");
+        removeBtn.textContent = "🗑"; // Trash icon
+        removeBtn.style.padding = "5px";
+        removeBtn.style.background = "#dc3545";
+        removeBtn.style.color = "white";
+        removeBtn.style.border = "none";
+        removeBtn.style.cursor = "pointer";
+        removeBtn.onclick = () => removeTrack(t);
+
+        controlDiv.appendChild(removeBtn);
+        controlDiv.appendChild(labelBtn);
+        row.appendChild(controlDiv);
+
+        // Steps
+        for (let s = 0; s < 16; s++) {
+            const stepBtn = document.createElement("div");
+            stepBtn.className = "step-btn"; // Class for playhead targeting
+            stepBtn.style.width = "30px";
+            stepBtn.style.height = "30px";
+            stepBtn.style.background = "#444";
+            stepBtn.style.borderRadius = "2px";
+            stepBtn.style.cursor = "pointer";
+            stepBtn.style.border = "1px solid #555";
+            stepBtn.dataset.track = t;
+            stepBtn.dataset.step = s;
+
+            // Check if active
+            try {
+                const json = vm.eval(`$sequencer.get_track_step_notes_json(${t}, ${s})`).toString();
+                const notes = JSON.parse(json);
+                if (notes.length > 0) {
+                    stepBtn.style.background = "#4dabf7";
+                }
+            } catch(e) {}
+
+            stepBtn.onclick = () => {
+                // Ensure track is selected when editing?
+                // It might be better to just select the track to update UI contex
+                if (currentTrackIndex !== t) {
+                    selectTrack(t);
+                }
+                openEditor(t, s);
+            };
+
+            row.appendChild(stepBtn);
+        }
+
+        rowsContainer.appendChild(row);
+    }
   }
+
+  function selectTrack(index) {
+    try {
+        vm.eval(`$sequencer.select_track(${index})`);
+
+        // Update Synth UI
+        const settings = vm.eval("$synth.export_settings").toString();
+        updateUIFromSettings(settings);
+
+        renderSequencer(); // Redraw to show selected state
+    } catch(e) { console.error(e); }
+  }
+
+  function removeTrack(index) {
+    if (!confirm(`Delete Track ${index + 1}?`)) return;
+    try {
+        vm.eval(`$sequencer.remove_track(${index})`);
+        // Handle selection update if needed
+        const newIdx = parseInt(vm.eval("$sequencer.current_track_index").toString());
+        selectTrack(newIdx); // Will re-render
+    } catch(e) { console.error(e); }
+  }
+
+  addTrackBtn.onclick = () => {
+    try {
+        vm.eval("$sequencer.add_track");
+        const len = parseInt(vm.eval("$sequencer.tracks.length").toString());
+        selectTrack(len - 1);
+    } catch(e) { console.error(e); }
+  };
 
   playBtn.onclick = () => {
     try {
@@ -295,29 +402,25 @@ function setupSequencer(vm) {
   closeModal.onclick = () => {
     modal.style.display = "none";
     currentEditingStep = null;
+    currentEditingTrack = null;
     currentSelectedCell = null;
-
-    updateGridVisuals();
+    renderSequencer(); // Update visuals
   };
 
-  function updateGridVisuals() {
-    for (let i = 0; i < 16; i++) {
-      const stepBtn = grid.children[i];
-      try {
-        const json = vm.eval(`$sequencer.get_step_notes_json(${i})`).toString();
-        const notes = JSON.parse(json);
-        if (notes.length > 0) {
-          stepBtn.style.background = "#4dabf7";
-        } else {
-          stepBtn.style.background = "#444";
-        }
-      } catch(e) {}
+  window.addEventListener("trackChanged", () => {
+    renderSequencer();
+    if (modal.style.display !== "none" && currentEditingStep !== null) {
+        renderLattice(currentEditingStep);
     }
-  }
+  });
 
-  function openEditor(stepIndex) {
+  // Initial render
+  renderSequencer();
+
+  function openEditor(trackIndex, stepIndex) {
+    currentEditingTrack = trackIndex;
     currentEditingStep = stepIndex;
-    modalStepNum.textContent = stepIndex + 1;
+    modalStepNum.textContent = `T${trackIndex + 1} : Step ${stepIndex + 1}`;
     modal.style.display = "flex";
 
     try {
@@ -330,9 +433,10 @@ function setupSequencer(vm) {
 
   function renderLattice(stepIndex) {
     latticeGrid.innerHTML = "";
+    if (currentEditingTrack === null) return;
 
     try {
-      const json = vm.eval(`$sequencer.get_step_notes_json(${stepIndex})`).toString();
+      const json = vm.eval(`$sequencer.get_track_step_notes_json(${currentEditingTrack}, ${stepIndex})`).toString();
       currentStepNotes = JSON.parse(json);
     } catch(e) { console.error(e); return; }
 
@@ -353,7 +457,7 @@ function setupSequencer(vm) {
         cell.style.border = "1px solid #333";
         cell.style.userSelect = "none";
 
-        // Selection highlight
+        // Selection highligh
         if (currentSelectedCell && currentSelectedCell.x === x && currentSelectedCell.y === y) {
           cell.style.borderColor = "#fff";
           cell.style.boxShadow = "inset 0 0 0 2px #fff";
@@ -441,15 +545,12 @@ function setupVisualizer(vm) {
   const canvas = document.getElementById("visualizer");
   const canvasCtx = canvas.getContext("2d");
 
-  vm.eval("JS.global[:synthAnalyser] = $synth.analyser_node");
-  const analyser = window.synthAnalyser;
+  // Initial setup is handled by Sequencer -> select_track
 
-  if (!analyser) {
-    console.error("Analyser node not found");
-    return;
-  }
-
-  const bufferLength = analyser.frequencyBinCount;
+  // Buffer length is usually constant for the same AudioContext/Analyser creation params
+  // But if we create new Analyser, we should be careful.
+  // Generally fftSize is 2048 (from synth.rb).
+  const bufferLength = 1024; // fftSize / 2
   const dataArray = new Uint8Array(bufferLength);
   let vizMode = "waveform";
 
@@ -461,6 +562,9 @@ function setupVisualizer(vm) {
 
   function draw() {
     requestAnimationFrame(draw);
+
+    const analyser = window.synthAnalyser;
+    if (!analyser) return;
 
     canvasCtx.fillStyle = "rgb(20, 20, 20)";
     canvasCtx.fillRect(0, 0, canvas.width, canvas.height);

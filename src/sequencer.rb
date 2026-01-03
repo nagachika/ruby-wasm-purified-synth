@@ -13,22 +13,30 @@ NoteCoord = Struct.new(:a, :b, :c, :d, :e) do
   end
 end
 
+class Track
+  attr_accessor :steps, :synth
+
+  def initialize(synth)
+    @synth = synth
+    @steps = Array.new(16) { [] }
+  end
+end
+
 class Sequencer
   attr_accessor :bpm
   attr_accessor :root_freq
   attr_accessor :y_axis_dim # 3, 4, or 5
 
-  attr_reader :is_playing, :current_step
+  attr_reader :is_playing, :current_step, :tracks, :current_track_index
 
-  def initialize(synth, ctx)
-    @synth = synth
+  def initialize(ctx)
     @ctx = ctx
     @bpm = 120
     @root_freq = 261.63 # C4
     @y_axis_dim = 3 # Default to 5-limit (3rd dim)
 
-    # @steps[index] is an Array of NoteCoord objects
-    @steps = Array.new(16) { [] }
+    @tracks = []
+    add_track # Add initial track
 
     @is_playing = false
     @current_step = 0
@@ -37,24 +45,53 @@ class Sequencer
     @lookahead_ms = 25.0
   end
 
+  def add_track
+    synth = Synthesizer.new(@ctx)
+    track = Track.new(synth)
+    @tracks << track
+    select_track(@tracks.length - 1)
+    track
+  end
+
+  def remove_track(index)
+    return if @tracks.length <= 1 # Keep at least one track
+    return if index < 0 || index >= @tracks.length
+
+    track = @tracks.delete_at(index)
+    track.synth.close
+
+    # Adjust selection if necessary
+    if @current_track_index >= @tracks.length
+      @current_track_index = @tracks.length - 1
+    end
+  end
+
+  def select_track(index)
+    if index >= 0 && index < @tracks.length
+      @current_track_index = index
+      # Update global $synth reference for UI
+      $synth = current_track.synth
+      # Update global analyser for Visualizer
+      JS.global[:synthAnalyser] = current_track.synth.analyser_node
+    end
+  end
+
+  def current_track
+    @tracks[@current_track_index]
+  end
+
+  # Proxy methods to current track's steps
   # Toggle a note at specific lattice coordinates (b, y_val)
   # y_val corresponds to the dimension specified by @y_axis_dim
   def toggle_note(step_index, b, y_val)
-    step = @steps[step_index]
+    step = current_track.steps[step_index]
 
-    # Target coordinates
     t_c = (@y_axis_dim == 3) ? y_val : 0
     t_d = (@y_axis_dim == 4) ? y_val : 0
     t_e = (@y_axis_dim == 5) ? y_val : 0
 
     # Find existing note with matching X(b) and Y(current dim) coordinates
     # We ignore Octave(a) for existence check to allow toggling the "cell"
-    # Actually, if multiple octaves exist in the same cell, how do we handle toggle?
-    # User requirement: "Rectangular selection".
-    # Simplification: Toggling a cell creates a note with a=0 if none exists.
-    # If notes exist in that cell, it removes ALL of them (or just the latest?).
-    # Let's say it removes all notes in that cell.
-
     existing_indices = []
     step.each_with_index do |note, idx|
       match = (note.b == b)
@@ -76,7 +113,7 @@ class Sequencer
 
   # Change octave (a) for notes in a specific cell
   def shift_octave(step_index, b, y_val, delta)
-    step = @steps[step_index]
+    step = current_track.steps[step_index]
 
     t_c = (@y_axis_dim == 3) ? y_val : 0
     t_d = (@y_axis_dim == 4) ? y_val : 0
@@ -97,13 +134,12 @@ class Sequencer
   # Shift all notes in a step by dx (b axis) and dy (y axis dim)
   # Returns true if shift occurred, false if blocked by bounds
   def shift_step_notes(step_index, dx, dy)
-    step = @steps[step_index]
+    step = current_track.steps[step_index]
     return false if step.empty?
 
     # Check bounds first
     # X bounds: -3 to 3
     # Y bounds: -2 to 2 (for c, d, e depending on dim)
-
     can_shift = step.all? do |n|
       new_b = n.b + dx
       valid_x = new_b.between?(-3, 3)
@@ -140,10 +176,20 @@ class Sequencer
   # Return notes for a step to JS for rendering
   # Returns JSON string
   def get_step_notes_json(step_index)
-    notes = @steps[step_index].map do |n|
+    notes = current_track.steps[step_index].map do |n|
       n.to_json_object
     end
-    # Simple JSON construction
+    json_items = notes.map do |n|
+      %|{ "a": #{n[:a]}, "b": #{n[:b]}, "c": #{n[:c]}, "d": #{n[:d]}, "e": #{n[:e]} }|
+    end
+    "[#{json_items.join(',')}]"
+  end
+
+  def get_track_step_notes_json(track_index, step_index)
+    return "[]" if track_index < 0 || track_index >= @tracks.length
+    notes = @tracks[track_index].steps[step_index].map do |n|
+      n.to_json_object
+    end
     json_items = notes.map do |n|
       %|{ "a": #{n[:a]}, "b": #{n[:b]}, "c": #{n[:c]}, "d": #{n[:d]}, "e": #{n[:e]} }|
     end
@@ -179,15 +225,16 @@ class Sequencer
   end
 
   def schedule_step(step_index, time)
-    notes = @steps[step_index]
+    seconds_per_beat = 60.0 / @bpm
+    step_duration = seconds_per_beat / 4.0
 
-    if notes && !notes.empty?
-      seconds_per_beat = 60.0 / @bpm
-      step_duration = seconds_per_beat / 4.0
-
-      notes.each do |note|
-        freq = calculate_freq(note)
-        @synth.schedule_note(freq, time, step_duration * 0.8)
+    @tracks.each do |track|
+      notes = track.steps[step_index]
+      if notes && !notes.empty?
+        notes.each do |note|
+          freq = calculate_freq(note)
+          track.synth.schedule_note(freq, time, step_duration * 0.8)
+        end
       end
     end
 

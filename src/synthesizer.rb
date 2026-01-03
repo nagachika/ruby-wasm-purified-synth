@@ -206,6 +206,16 @@ class Synthesizer
     @noise_buffer = create_noise_buffer
   end
 
+  def close
+    # Disconnect from destination to stop sound and allow GC
+    if @analyser_node
+      @analyser_node.disconnect
+    end
+    # Also stop any active voices
+    @active_voices.values.each(&:stop_immediately)
+    @active_voices.clear
+  end
+
   def create_noise_buffer
     rate = @ctx[:sampleRate].to_f
     length = rate.to_i # 1 second of noise
