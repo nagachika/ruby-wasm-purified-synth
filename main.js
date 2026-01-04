@@ -984,9 +984,13 @@ function setupSequencer(vm) {
     } catch (e) { console.error("Sequencer play/stop error:", e); }
   };
   measuresInput.addEventListener("input", () => {
+      if (measuresDisplay) measuresDisplay.textContent = measuresInput.value;
       try { vm.eval(`$sequencer.total_bars = ${measuresInput.value}`); renderSequencer(); } catch(e){}
   });
-  bpmInput.addEventListener("input", () => { try{vm.eval(`$sequencer.bpm = ${bpmInput.value}`);}catch(e){} });
+  bpmInput.addEventListener("input", () => { 
+      if (bpmDisplay) bpmDisplay.textContent = bpmInput.value;
+      try{vm.eval(`$sequencer.bpm = ${bpmInput.value}`);}catch(e){} 
+  });
   rootFreqInput.addEventListener("change", () => { try{vm.eval(`$sequencer.root_freq = ${rootFreqInput.value}`);}catch(e){} });
   yAxisSelect.addEventListener("change", () => { try{vm.eval(`$sequencer.y_axis_dim = ${yAxisSelect.value}`);}catch(e){} });
 
