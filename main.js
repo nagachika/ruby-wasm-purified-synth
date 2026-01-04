@@ -334,7 +334,6 @@ function drawTetrisShape(ctx, notes, w, h) {
     ctx.fillRect(0, 0, w, h);
     if (!notes || notes.length === 0) return;
 
-    // Use (b, c) for visualization default
     const coords = notes.map(n => ({ x: n.b, y: n.c }));
 
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -347,18 +346,19 @@ function drawTetrisShape(ctx, notes, w, h) {
 
     const rangeX = maxX - minX + 1;
     const rangeY = maxY - minY + 1;
-    const cellSize = Math.min(w / (rangeX + 2), h / (rangeY + 2), 10);
-
-    const offsetX = (w - rangeX * cellSize) / 2 - minX * cellSize;
-    const offsetY = (h - rangeY * cellSize) / 2; // relative to bounding box top
+    
+    // Decrease max cell size and increase margin to ensure it fits
+    const cellSize = Math.min(w / (rangeX + 1), h / (rangeY + 1), 8);
+    
+    const offsetX = (w - (rangeX * cellSize)) / 2 - (minX * cellSize);
+    const offsetY = (h - (rangeY * cellSize)) / 2;
 
     coords.forEach(p => {
         const cx = offsetX + p.x * cellSize;
         const cy = offsetY + (maxY - p.y) * cellSize;
-
+        
         ctx.fillStyle = "#4dabf7";
-
-        // Root (0,0) check
+        
         if (p.x === 0 && p.y === 0) {
             ctx.beginPath();
             ctx.arc(cx + cellSize/2, cy + cellSize/2, cellSize/2 - 1, 0, Math.PI * 2);
@@ -367,15 +367,14 @@ function drawTetrisShape(ctx, notes, w, h) {
             ctx.lineWidth = 1;
             ctx.stroke();
         } else {
-            // Rounded rect
             const r = 2;
             ctx.beginPath();
-            ctx.roundRect(cx + 1, cy + 1, cellSize - 2, cellSize - 2, r);
+            // Ensure we don't draw outside bounds by using a small inset
+            ctx.roundRect(cx + 0.5, cy + 1, cellSize - 1, cellSize - 2, r);
             ctx.fill();
         }
     });
 }
-
 // --- Tabs ---
 function setupTabs() {
   const tabSynth = document.getElementById("tab-synth");
@@ -799,12 +798,12 @@ function setupSequencer(vm) {
 
                 // Render Tetris Shape inside Block
                 const canvas = document.createElement("canvas");
-                // dynamic width based on block?
                 const cw = b.length * CELL_WIDTH - 4;
-                const ch = 76; // 80 - border
+                const ch = 70; // Reduced height to ensure fit
                 canvas.width = cw > 0 ? cw : 1;
                 canvas.height = ch;
-                // We need the notes to draw
+                canvas.style.display = "block"; // Prevent inline spacing issues
+                
                 try {
                     const notesJson = vm.eval(`$sequencer.get_block_notes_json(${t}, ${b.start})`).toString();
                     const notes = JSON.parse(notesJson);
