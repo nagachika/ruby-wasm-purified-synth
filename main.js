@@ -127,17 +127,29 @@ function setupChordView(vm) {
     if (!name) return alert("Please enter a chord name.");
     if (currentChordNotes.length === 0) return alert("Chord is empty.");
 
-    chords[name] = currentChordNotes;
+    chords[name] = {
+        notes: currentChordNotes,
+        dimension: parseInt(yAxisSel.value)
+    };
     saveChords();
     renderChordList();
     alert(`Chord "${name}" saved!`);
   };
 
-  yAxisSel.onchange = () => renderChordEditor();
+  yAxisSel.onchange = () => {
+      // Keep only root note (0,0,0,0,0) with potential octave shift
+      currentChordNotes = currentChordNotes.filter(n => n.b === 0 && n.c === 0 && n.d === 0 && n.e === 0);
+      renderChordEditor();
+  };
 
   function renderChordList() {
     listContainer.innerHTML = "";
     Object.keys(chords).forEach(name => {
+      const entry = chords[name];
+      const isLegacy = Array.isArray(entry);
+      const notes = isLegacy ? entry : entry.notes;
+      const dim = isLegacy ? null : entry.dimension;
+
       const item = document.createElement("div");
       item.style.background = "#444";
       item.style.padding = "5px";
@@ -151,7 +163,7 @@ function setupChordView(vm) {
       const canvas = document.createElement("canvas");
       canvas.width = 40;
       canvas.height = 40;
-      drawTetrisShape(canvas.getContext("2d"), chords[name], 40, 40);
+      drawTetrisShape(canvas.getContext("2d"), notes, 40, 40, dim);
 
       const label = document.createElement("span");
       label.textContent = name;
@@ -174,7 +186,19 @@ function setupChordView(vm) {
       item.onclick = () => {
         currentChordName = name;
         // Deep copy notes
-        currentChordNotes = JSON.parse(JSON.stringify(chords[name]));
+        currentChordNotes = JSON.parse(JSON.stringify(notes));
+        
+        // Restore dimension
+        if (dim) {
+            yAxisSel.value = dim;
+        } else {
+            // Infer
+            let inferred = 3;
+            if (notes.some(n => n.e !== 0)) inferred = 5;
+            else if (notes.some(n => n.d !== 0)) inferred = 4;
+            yAxisSel.value = inferred;
+        }
+
         nameInput.value = name;
         renderChordEditor();
       };
@@ -329,12 +353,27 @@ function renderGenericLattice(container, notes, dim, selectedCell, onToggle) {
     }
 }
 
-function drawTetrisShape(ctx, notes, w, h) {
+function drawTetrisShape(ctx, notes, w, h, dimension) {
     ctx.fillStyle = "#222";
     ctx.fillRect(0, 0, w, h);
     if (!notes || notes.length === 0) return;
 
-    const coords = notes.map(n => ({ x: n.b, y: n.c }));
+    // Determine dimension to use if not provided
+    let dimToUse = dimension;
+    if (!dimToUse) {
+        dimToUse = 3; // Default
+        const has5 = notes.some(n => n.e !== 0);
+        const has4 = notes.some(n => n.d !== 0);
+        if (has5) dimToUse = 5;
+        else if (has4) dimToUse = 4;
+    }
+
+    const coords = notes.map(n => {
+        let y = n.c;
+        if (dimToUse === 4) y = n.d;
+        if (dimToUse === 5) y = n.e;
+        return { x: n.b, y: y };
+    });
 
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     coords.forEach(p => {
@@ -855,6 +894,11 @@ function setupSequencer(vm) {
 
       // Add existing chords
       chordNames.forEach(name => {
+          const entry = chords[name];
+          const isLegacy = Array.isArray(entry);
+          const notes = isLegacy ? entry : entry.notes;
+          const dim = isLegacy ? null : entry.dimension;
+
           const item = document.createElement("div");
           item.style.background = "#444";
           item.style.padding = "5px";
@@ -864,7 +908,7 @@ function setupSequencer(vm) {
 
           const cvs = document.createElement("canvas");
           cvs.width = 80; cvs.height = 80;
-          drawTetrisShape(cvs.getContext("2d"), chords[name], 80, 80);
+          drawTetrisShape(cvs.getContext("2d"), notes, 80, 80, dim);
 
           const lbl = document.createElement("div");
           lbl.textContent = name;
@@ -875,7 +919,7 @@ function setupSequencer(vm) {
           item.appendChild(lbl);
 
           item.onclick = () => {
-              applyChordToBlock(trackIdx, startStep, name, chords[name]);
+              applyChordToBlock(trackIdx, startStep, name, notes);
               selectorModal.style.display = "none";
           };
 
