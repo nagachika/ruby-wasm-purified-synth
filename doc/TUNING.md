@@ -20,13 +20,13 @@ Where:
 
 By combining these ratios, you can construct chords that are perfectly consonant (beat-free) in ways impossible on a standard piano.
 
-## Sequencer & Grid Editor
+## Visualizing the Lattice
 
-The sequencer allows you to construct chords visually on a 2D slice of this multi-dimensional lattice.
+The **Chord Editor** allows you to construct chords visually on a 2D slice of this multi-dimensional lattice.
 
 ### The Grid UI
 
-When you click a step in the sequencer, the **Step Editor** opens. This grid represents a musical space:
+The grid interface represents a musical space:
 
 *   **X-Axis (Horizontal)**: Represents the **3rd Harmonic dimension ($b$)**.
     *   Center (0): The Root.
