@@ -15,16 +15,15 @@
     .tab-btn.active { background: #007bff; color: white; border-color: #007bff; }
     
     /* Main Content Area */
-    #main-container { flex-grow: 1; overflow: hidden; position: relative; padding: 20px; box-sizing: border-box; }
+    #main-container { flex-grow: 1; overflow: hidden; position: relative; padding: 20px; box-sizing: border-box; display: flex; flex-direction: column; }
     
-    .view { display: none; height: 100%; overflow-y: auto; }
+    .view { display: none; flex-grow: 1; overflow-y: auto; min-height: 0; }
     .view.active { display: block; }
     
     /* View Specific Layouts */
-    #view-synthesizer { display: none; grid-template-columns: 1fr 1fr; gap: 20px; align-content: start; }
     #view-synthesizer.active { display: grid; }
     
-    #view-sequencer { display: none; flex-direction: column; height: 100%; }
+    #view-sequencer { display: none; flex-direction: column; }
     #view-sequencer.active { display: flex; }
 
     /* Panels */
