@@ -455,11 +455,34 @@ function setupSequencer(vm) {
             } catch(e) {}
         };
 
+        const soloBtn = document.createElement("button");
+        let isSolo = false;
+        try {
+            isSolo = vm.eval(`$sequencer.tracks[${t}].solo`).toString() === "true";
+        } catch(e) {}
+        soloBtn.innerHTML = `<span class="material-icons" style="font-size: 1.2rem;">${isSolo ? "grade" : "star_outline"}</span>`;
+        soloBtn.style.padding = "4px";
+        soloBtn.style.display = "flex";
+        soloBtn.style.alignItems = "center";
+        soloBtn.style.justifyContent = "center";
+        soloBtn.style.background = isSolo ? "#fcc419" : "#444";
+        soloBtn.style.color = isSolo ? "black" : "white";
+        soloBtn.style.border = "1px solid #555";
+        soloBtn.style.cursor = "pointer";
+        soloBtn.onclick = () => {
+            try {
+                const newVal = !isSolo;
+                vm.eval(`$sequencer.tracks[${t}].solo = ${newVal}`);
+                renderSequencer();
+            } catch(e) {}
+        };
+
         const btnRow = document.createElement("div");
         btnRow.style.display = "flex";
         btnRow.style.gap = "2px";
         btnRow.appendChild(removeBtn);
         btnRow.appendChild(muteBtn);
+        btnRow.appendChild(soloBtn);
 
         controlDiv.appendChild(labelBtn);
         controlDiv.appendChild(presetSel);
@@ -792,6 +815,18 @@ function setupSequencer(vm) {
           // Select and toggle
           currentSelectedCell = { x, y };
           vm.eval(`$sequencer.toggle_note_in_block(${currentEditingTrack}, ${stepIndex}, ${x}, ${y})`);
+          
+          // Audition: play the note briefly
+          try {
+              // We create a dummy NoteCoord to calculate freq
+              const freq = vm.eval(`
+                n = NoteCoord.new(0, ${x}, ${currentDim === 3 ? y : 0}, ${currentDim === 4 ? y : 0}, ${currentDim === 5 ? y : 0})
+                $sequencer.calculate_freq(n)
+              `).to_f();
+              // Use current track's synth for auditioning
+              vm.eval(`$sequencer.tracks[${currentEditingTrack}].synth.schedule_note(${freq}, JS.eval('return window.audioCtx.currentTime;').to_f, 0.3)`);
+          } catch(err) { console.error(err); }
+
           renderLattice(stepIndex);
         };
 
