@@ -422,9 +422,11 @@ function setupSequencer(vm) {
 
         // Remove & Mute Buttons
         const removeBtn = document.createElement("button");
-        removeBtn.textContent = "🗑"; 
+        removeBtn.innerHTML = '<span class="material-icons" style="font-size: 1.2rem;">delete</span>'; 
         removeBtn.style.padding = "4px";
-        removeBtn.style.fontSize = "0.8rem";
+        removeBtn.style.display = "flex";
+        removeBtn.style.alignItems = "center";
+        removeBtn.style.justifyContent = "center";
         removeBtn.style.background = "#dc3545";
         removeBtn.style.color = "white";
         removeBtn.style.border = "none";
@@ -436,9 +438,11 @@ function setupSequencer(vm) {
         try {
             isMuted = vm.eval(`$sequencer.tracks[${t}].mute`).toString() === "true";
         } catch(e) {}
-        muteBtn.textContent = isMuted ? "🔇" : "🔊";
+        muteBtn.innerHTML = `<span class="material-icons" style="font-size: 1.2rem;">${isMuted ? "volume_off" : "volume_up"}</span>`;
         muteBtn.style.padding = "4px";
-        muteBtn.style.fontSize = "0.8rem";
+        muteBtn.style.display = "flex";
+        muteBtn.style.alignItems = "center";
+        muteBtn.style.justifyContent = "center";
         muteBtn.style.background = isMuted ? "#6c757d" : "#444";
         muteBtn.style.color = "white";
         muteBtn.style.border = "1px solid #555";
@@ -660,11 +664,11 @@ function setupSequencer(vm) {
       const isPlaying = vm.eval("$sequencer.is_playing").toString() === "true";
       if (isPlaying) {
         vm.eval("$sequencer.stop");
-        playBtn.textContent = "Play";
+        playBtn.innerHTML = '<span class="material-icons">play_arrow</span> Play';
         playBtn.style.background = "#007bff";
       } else {
         vm.eval("$sequencer.start");
-        playBtn.textContent = "Stop";
+        playBtn.innerHTML = '<span class="material-icons">stop</span> Stop';
         playBtn.style.background = "#dc3545";
       }
     } catch (e) { console.error("Sequencer play/stop error:", e); }
