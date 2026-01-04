@@ -882,12 +882,15 @@ function setupSequencer(vm) {
           // Audition: play the note briefly
           try {
               // We create a dummy NoteCoord to calculate freq
-              const freq = vm.eval(`
+              const freqStr = vm.eval(`
                 n = NoteCoord.new(0, ${x}, ${currentDim === 3 ? y : 0}, ${currentDim === 4 ? y : 0}, ${currentDim === 5 ? y : 0})
                 $sequencer.calculate_freq(n)
-              `).to_f();
+              `).toString();
+              const freq = parseFloat(freqStr);
+              
               // Use current track's synth for auditioning
-              vm.eval(`$sequencer.tracks[${currentEditingTrack}].synth.schedule_note(${freq}, JS.eval('return window.audioCtx.currentTime;').to_f, 0.3)`);
+              const now = window.audioCtx.currentTime;
+              vm.eval(`$sequencer.tracks[${currentEditingTrack}].synth.schedule_note(${freq}, ${now}, 0.3)`);
           } catch(err) { console.error(err); }
 
           renderLattice(stepIndex);
