@@ -952,9 +952,13 @@ function updateParam(vm, id, el) {
 
 function setupKeyboard(vm) {
   const getFreq = (note) => 440.0 * Math.pow(2.0, (note - 69) / 12.0);
+  const viewSynth = document.getElementById("view-synthesizer");
 
   window.addEventListener("keydown", (e) => {
     if (e.repeat) return;
+    // Only allow keyboard play in Synthesizer mode
+    if (!viewSynth.classList.contains("active")) return;
+
     const note = keyMap[e.key];
     if (note) {
       vm.eval(`$synth.note_on(${getFreq(note)})`);
