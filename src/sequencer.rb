@@ -12,12 +12,13 @@ NoteCoord = Struct.new(:a, :b, :c, :d, :e) do
   end
 end
 
-Block = Struct.new(:start_step, :length, :notes) do
+Block = Struct.new(:start_step, :length, :notes, :chord_name) do
   def to_json_object
     {
       start: start_step,
       length: length,
-      notes: notes.map(&:to_json_object)
+      notes: notes.map(&:to_json_object),
+      chord_name: chord_name
     }
   end
 end
@@ -41,7 +42,7 @@ class Track
   end
 
   def add_block(start_step, length)
-    block = Block.new(start_step, length, [])
+    block = Block.new(start_step, length, [], "")
     @blocks << block
     block
   end
@@ -49,7 +50,7 @@ class Track
   def remove_block_at(start_step)
     @blocks.reject! { |b| b.start_step == start_step }
   end
-  
+
   def find_block_at(step)
     @blocks.find { |b| b.start_step <= step && (b.start_step + b.length) > step }
   end
@@ -83,7 +84,7 @@ class Sequencer
   def total_bars=(bars)
     @total_steps = bars.to_i * 32
   end
-  
+
   def total_bars
     @total_steps / 32
   end
@@ -130,10 +131,10 @@ class Sequencer
     track = @tracks[track_index]
     return unless track
 
-    # Remove overlapping blocks? Or allow overlap? 
+    # Remove overlapping blocks? Or allow overlap?
     # For now, let's remove overlaps for simplicity in this mono-timbral-per-track context
     # actually let's just push it. Overlaps are fine for polyphony.
-    
+
     # Check if a block starts exactly here to update it?
     existing = track.blocks.find { |b| b.start_step == start_step }
     if existing
@@ -142,7 +143,7 @@ class Sequencer
       track.add_block(start_step, length)
     end
   end
-  
+
   def remove_block(track_index, start_step)
     track = @tracks[track_index]
     return unless track
@@ -153,7 +154,7 @@ class Sequencer
   def get_block_notes_json(track_index, start_step)
     track = @tracks[track_index]
     return "[]" unless track
-    
+
     block = track.blocks.find { |b| b.start_step == start_step }
     return "[]" unless block
 
@@ -164,35 +165,35 @@ class Sequencer
   end
 
   # Update notes in a block from Lattice Editor
-  def update_block_notes(track_index, start_step, notes_json)
+  def update_block_notes(track_index, start_step, notes_json_str)
     track = @tracks[track_index]
     return unless track
-    
+
     block = track.blocks.find { |b| b.start_step == start_step }
     return unless block
 
-    # Parse JSON (naive parsing or use JS)
-    # We can use JS.eval to parse and return array of objects
-    
     # Clear existing
     block.notes.clear
-    
-    # Re-populate
-    # Assuming notes_json is like [{a:0, b:0, ...}, ...]
-    js_notes = JS.eval("return #{notes_json}")
-    js_notes.each do |n|
+
+    # Parse JSON string from JS
+    js_notes = JS.global[:JSON].call(:parse, notes_json_str)
+
+    # Iterate JS Array using index
+    len = js_notes[:length].to_i
+    len.times do |i|
+       n = js_notes[i]
        # JS objects to Ruby structs
        new_note = NoteCoord.new(
-         n[:a].to_f, 
-         n[:b].to_f, 
-         n[:c].to_f, 
-         n[:d].to_f, 
+         n[:a].to_f,
+         n[:b].to_f,
+         n[:c].to_f,
+         n[:d].to_f,
          n[:e].to_f
        )
        block.notes << new_note
     end
   end
-  
+
   # Helper for Lattice Editor logic (reusing existing toggling logic but on Block)
   def toggle_note_in_block(track_index, start_step, b, y_val)
     track = @tracks[track_index]
@@ -220,7 +221,7 @@ class Sequencer
       block.notes << new_note
     end
   end
-  
+
   def shift_octave_in_block(track_index, start_step, b, y_val, delta)
     track = @tracks[track_index]
     return unless track
@@ -242,7 +243,7 @@ class Sequencer
       end
     end
   end
-  
+
   def shift_block_notes(track_index, start_step, dx, dy)
     track = @tracks[track_index]
     return false unless track
@@ -282,10 +283,10 @@ class Sequencer
   def get_track_blocks_json(track_index)
     track = @tracks[track_index]
     return "[]" unless track
-    
+
     # Manual JSON construction
     items = track.blocks.map do |b|
-       # notes count is enough for rendering? 
+       # notes count is enough for rendering?
        # or maybe send if it has notes to color it
        %|{ "start": #{b.start_step}, "length": #{b.length}, "notes_count": #{b.notes.length} }|
     end
@@ -339,18 +340,18 @@ class Sequencer
 
       # Find blocks starting at this step
       blocks = track.blocks.select { |b| b.start_step == step_index }
-      
+
       blocks.each do |block|
         next if block.notes.empty?
-        
+
         duration = block.length * step_duration_sec
         # Slightly reduce for articulation? Or full legato?
         # User asked for connecting sections... full legato might be desired if butt-joined.
         # But let's keep 0.8 for articulation for now unless legato is explicitly requested
         # Actually, if we want "one long note", the block handles it.
         # Between blocks, articulation is good.
-        play_duration = duration # * 0.95? 
-        
+        play_duration = duration # * 0.95?
+
         block.notes.each do |note|
           freq = calculate_freq(note)
           track.synth.schedule_note(freq, time, play_duration)
@@ -375,11 +376,11 @@ class Sequencer
     seconds_per_beat = 60.0 / @bpm
     # 1 step = 1/32 bar = 1/8 beat
     @next_note_time += (seconds_per_beat / 8.0)
-    
+
     @current_step += 1
     # Loop at total_steps
     if @current_step >= @total_steps
-      @current_step = 0 
+      @current_step = 0
     end
   end
 end
