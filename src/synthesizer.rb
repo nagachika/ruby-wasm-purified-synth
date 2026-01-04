@@ -262,6 +262,11 @@ class Synthesizer
     @reverb_dry_gain[:gain][:value] = 1.0 - @reverb_mix
   end
 
+  def volume=(val)
+    # Default gain was 0.5, so 1.0 volume maps to 0.5
+    @master_gain[:gain][:value] = val.to_f * 0.5
+  end
+
   def update_reverb_buffer
     rate = @ctx[:sampleRate].to_f
     length = (rate * @reverb_seconds).to_i

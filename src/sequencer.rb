@@ -24,6 +24,7 @@ end
 
 class Track
   attr_accessor :blocks, :synth, :mute, :preset_name, :solo
+  attr_reader :volume
 
   def initialize(synth)
     @synth = synth
@@ -31,6 +32,12 @@ class Track
     @mute = false
     @solo = false
     @preset_name = ""
+    @volume = 1.0
+  end
+
+  def volume=(val)
+    @volume = val.to_f
+    @synth.volume = @volume
   end
 
   def add_block(start_step, length)

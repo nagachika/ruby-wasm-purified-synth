@@ -477,12 +477,75 @@ function setupSequencer(vm) {
             } catch(e) {}
         };
 
+        // Volume Knob
+        const knobContainer = document.createElement("div");
+        knobContainer.style.display = "flex";
+        knobContainer.style.alignItems = "center";
+        knobContainer.style.justifyContent = "center";
+        knobContainer.style.cursor = "ns-resize";
+        knobContainer.title = "Volume (Drag up/down)";
+
+        const knobIcon = document.createElement("span");
+        knobIcon.className = "material-icons";
+        knobIcon.textContent = "arrow_circle_up";
+        knobIcon.style.fontSize = "1.5rem";
+        knobIcon.style.color = "#4dabf7";
+        
+        let currentVol = 1.0;
+        try {
+            currentVol = parseFloat(vm.eval(`$sequencer.tracks[${t}].volume`).toString());
+        } catch(e) {}
+        
+        const rotation = (currentVol - 1.0) * 160;
+        knobIcon.style.transform = `rotate(${rotation}deg)`;
+        knobContainer.appendChild(knobIcon);
+
+        // Knob Drag Interaction
+        let isDraggingKnob = false;
+        let startY = 0;
+        let startVol = 1.0;
+
+        knobContainer.onmousedown = (e) => {
+            isDraggingKnob = true;
+            startY = e.clientY;
+            startVol = currentVol;
+            document.body.style.cursor = "ns-resize";
+            
+            const onMouseMove = (me) => {
+                if (!isDraggingKnob) return;
+                const dy = startY - me.clientY;
+                let nextVol = startVol + (dy / 100); // 100px for 1.0 change
+                if (nextVol < 0) nextVol = 0;
+                if (nextVol > 2.0) nextVol = 2.0;
+                
+                currentVol = nextVol;
+                const nextRot = (currentVol - 1.0) * 160;
+                knobIcon.style.transform = `rotate(${nextRot}deg)`;
+                
+                // Update Ruby
+                try {
+                    vm.eval(`$sequencer.tracks[${t}].volume = ${currentVol}`);
+                } catch(err) {}
+            };
+
+            const onMouseUp = () => {
+                isDraggingKnob = false;
+                document.body.style.cursor = "default";
+                window.removeEventListener("mousemove", onMouseMove);
+                window.removeEventListener("mouseup", onMouseUp);
+            };
+
+            window.addEventListener("mousemove", onMouseMove);
+            window.addEventListener("mouseup", onMouseUp);
+        };
+
         const btnRow = document.createElement("div");
         btnRow.style.display = "flex";
         btnRow.style.gap = "2px";
         btnRow.appendChild(removeBtn);
         btnRow.appendChild(muteBtn);
         btnRow.appendChild(soloBtn);
+        btnRow.appendChild(knobContainer);
 
         controlDiv.appendChild(labelBtn);
         controlDiv.appendChild(presetSel);
