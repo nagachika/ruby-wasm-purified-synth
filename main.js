@@ -845,7 +845,7 @@ function setupSequencer(vm) {
         cell.style.display = "flex";
         cell.style.alignItems = "center";
         cell.style.justifyContent = "center";
-        cell.style.height = "50px";
+        cell.style.aspectRatio = "1 / 1"; // Ensure square shape
         cell.style.cursor = "pointer";
         cell.style.fontSize = "0.8rem";
         cell.style.border = "1px solid #333";
