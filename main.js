@@ -349,7 +349,8 @@ function setupSequencer(vm) {
         row.style.gap = "0";
         row.style.alignItems = "stretch";
         row.style.marginBottom = "10px";
-        row.style.height = "60px";
+        row.style.height = "80px"; 
+        row.style.flexShrink = "0";
 
         // Track Controls (Left Panel)
         const controlDiv = document.createElement("div");
