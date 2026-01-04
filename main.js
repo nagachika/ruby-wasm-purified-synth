@@ -89,6 +89,7 @@ const main = async () => {
 
     console.log("Sequencer and Synthesizer initialized");
 
+    setupTabs();
     setupUI(vm);
     setupKeyboard(vm);
     setupVisualizer(vm);
@@ -96,6 +97,32 @@ const main = async () => {
     setupPresets(vm);
   };
 };
+
+function setupTabs() {
+  const tabSynth = document.getElementById("tab-synth");
+  const tabSeq = document.getElementById("tab-seq");
+  const viewSynth = document.getElementById("view-synthesizer");
+  const viewSeq = document.getElementById("view-sequencer");
+
+  function switchTab(view) {
+    if (view === "synth") {
+      tabSynth.classList.add("active");
+      tabSeq.classList.remove("active");
+      viewSynth.classList.add("active");
+      viewSeq.classList.remove("active");
+    } else {
+      tabSynth.classList.remove("active");
+      tabSeq.classList.add("active");
+      viewSynth.classList.remove("active");
+      viewSeq.classList.add("active");
+      // Trigger sequencer render when switching to it
+      window.dispatchEvent(new Event("trackChanged"));
+    }
+  }
+
+  tabSynth.onclick = () => switchTab("synth");
+  tabSeq.onclick = () => switchTab("seq");
+}
 
 function updateUIFromSettings(json) {
   try {
@@ -132,7 +159,8 @@ function setupPresets(vm) {
 
   const STORAGE_KEY = "ruby_synth_presets";
 
-  function getPresets() {
+  // Expose getPresets globally for Sequencer
+  window.getPresets = function() {
     const raw = localStorage.getItem(STORAGE_KEY);
     return raw ? JSON.parse(raw) : {};
   }
@@ -140,10 +168,11 @@ function setupPresets(vm) {
   function savePresets(presets) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(presets));
     updateList();
+    window.dispatchEvent(new Event("presetsUpdated")); // Notify sequencer
   }
 
   function updateList() {
-    const presets = getPresets();
+    const presets = window.getPresets();
     listSelect.innerHTML = '<option value="">-- Select Preset --</option>';
     Object.keys(presets).forEach(name => {
       const opt = document.createElement("option");
@@ -161,7 +190,7 @@ function setupPresets(vm) {
 
     try {
       const json = vm.eval("$synth.export_settings").toString();
-      const presets = getPresets();
+      const presets = window.getPresets();
       presets[name] = json;
       savePresets(presets);
       alert(`Preset "${name}" saved!`);
@@ -176,7 +205,7 @@ function setupPresets(vm) {
     const name = listSelect.value;
     if (!name) return;
 
-    const presets = getPresets();
+    const presets = window.getPresets();
     const json = presets[name];
     if (!json) return;
 
@@ -198,7 +227,7 @@ function setupPresets(vm) {
     if (!name) return;
     if (!confirm(`Delete preset "${name}"?`)) return;
 
-    const presets = getPresets();
+    const presets = window.getPresets();
     delete presets[name];
     savePresets(presets);
   };
@@ -304,12 +333,15 @@ function setupSequencer(vm) {
         document.querySelectorAll(".timeline-wrapper").forEach(wrapper => {
             wrapper.scrollLeft = left;
         });
+        window._lastScrollLeft = left;
     };
 
-    // Store previous scroll position to restore after re-render if needed
-    // Actually, a re-render resets everything, so we might lose position.
-    // Ideally we should persist it.
-    // For now let's just create it.
+    // Restore scroll position
+    setTimeout(() => {
+        if (window._lastScrollLeft) {
+            scrollContainer.scrollLeft = window._lastScrollLeft;
+        }
+    }, 0);
 
     for (let t = 0; t < tracksCount; t++) {
         const row = document.createElement("div");
@@ -319,11 +351,11 @@ function setupSequencer(vm) {
         row.style.marginBottom = "10px";
         row.style.height = "60px";
 
-        // ... Track Controls ...
+        // Track Controls (Left Panel)
         const controlDiv = document.createElement("div");
         controlDiv.style.display = "flex";
         controlDiv.style.flexDirection = "column";
-        controlDiv.style.width = "100px";
+        controlDiv.style.width = "140px"; // Increased width for preset selector
         controlDiv.style.flexShrink = "0";
         controlDiv.style.borderRight = "1px solid #555";
         controlDiv.style.paddingRight = "10px";
@@ -331,7 +363,8 @@ function setupSequencer(vm) {
         controlDiv.style.justifyContent = "center";
         controlDiv.style.gap = "5px";
 
-        // Select Button
+        // Select Button (Just for highlighting active track in Synth Mode if needed, though Synth Mode operates on current track)
+        // Actually, we need a way to say "This track uses THIS preset".
         const labelBtn = document.createElement("button");
         labelBtn.textContent = `Track ${t + 1}`;
         labelBtn.style.padding = "4px";
@@ -347,7 +380,46 @@ function setupSequencer(vm) {
         }
         labelBtn.onclick = () => selectTrack(t);
 
-        // Remove Button
+        // Preset Selector
+        const presetSel = document.createElement("select");
+        presetSel.style.fontSize = "0.8rem";
+        presetSel.style.padding = "2px";
+        presetSel.style.width = "100%";
+        
+        // Populate Presets
+        const presets = window.getPresets ? window.getPresets() : {};
+        presetSel.innerHTML = '<option value="">(Default)</option>';
+        Object.keys(presets).forEach(name => {
+            const opt = document.createElement("option");
+            opt.value = name;
+            opt.textContent = name;
+            presetSel.appendChild(opt);
+        });
+
+        // Set current value
+        let currentPresetName = "";
+        try {
+            currentPresetName = vm.eval(`$sequencer.tracks[${t}].preset_name`).toString();
+        } catch(e) {}
+        presetSel.value = currentPresetName;
+
+        presetSel.onchange = (e) => {
+            const name = e.target.value;
+            // Load preset to track synth
+            if (name && presets[name]) {
+                try {
+                    // Update Ruby Synth
+                    // We need to pass JSON string. Ideally call a method on Track?
+                    // Or just use import_settings on that track's synth
+                    window._tempTrackPresetJson = presets[name];
+                    vm.eval(`$sequencer.tracks[${t}].synth.import_settings(JS.global[:_tempTrackPresetJson])`);
+                    // Update preset name in Track
+                    vm.eval(`$sequencer.tracks[${t}].preset_name = "${name}"`);
+                } catch(err) { console.error(err); }
+            }
+        };
+
+        // Remove & Mute Buttons
         const removeBtn = document.createElement("button");
         removeBtn.textContent = "🗑"; 
         removeBtn.style.padding = "4px";
@@ -358,7 +430,6 @@ function setupSequencer(vm) {
         removeBtn.style.cursor = "pointer";
         removeBtn.onclick = () => removeTrack(t);
 
-        // Mute Button
         const muteBtn = document.createElement("button");
         let isMuted = false;
         try {
@@ -379,14 +450,15 @@ function setupSequencer(vm) {
             } catch(e) {}
         };
 
-        const topRow = document.createElement("div");
-        topRow.style.display = "flex";
-        topRow.style.gap = "2px";
-        topRow.appendChild(removeBtn);
-        topRow.appendChild(muteBtn);
+        const btnRow = document.createElement("div");
+        btnRow.style.display = "flex";
+        btnRow.style.gap = "2px";
+        btnRow.appendChild(removeBtn);
+        btnRow.appendChild(muteBtn);
 
         controlDiv.appendChild(labelBtn);
-        controlDiv.appendChild(topRow);
+        controlDiv.appendChild(presetSel);
+        controlDiv.appendChild(btnRow);
         row.appendChild(controlDiv);
 
         // Timeline Container
@@ -514,13 +586,12 @@ function setupSequencer(vm) {
     }
     
     // Append Master Scrollbar at the end
-    // Need to adjust margin to align with timelines (exclude track control width)
     const scrollRow = document.createElement("div");
     scrollRow.style.display = "flex";
     scrollRow.style.gap = "0";
     
     const spacer = document.createElement("div");
-    spacer.style.width = "110px"; // 100px width + 10px margin of controls
+    spacer.style.width = "150px"; // Adjusted for wider control div
     spacer.style.flexShrink = "0";
     
     scrollContainer.style.flexGrow = "1";
@@ -528,15 +599,6 @@ function setupSequencer(vm) {
     scrollRow.appendChild(spacer);
     scrollRow.appendChild(scrollContainer);
     rowsContainer.appendChild(scrollRow);
-
-    // Restore scroll position if possible?
-    if (window._lastScrollLeft) {
-        scrollContainer.scrollLeft = window._lastScrollLeft;
-    }
-    scrollContainer.addEventListener("scroll", () => {
-        window._lastScrollLeft = scrollContainer.scrollLeft;
-    });
-
   }
   
   // Global Mouse Up
@@ -557,6 +619,10 @@ function setupSequencer(vm) {
         drawTrackIndex = -1;
     }
   });
+
+  // Listen for preset updates to re-render dropdowns
+  window.addEventListener("presetsUpdated", renderSequencer);
+  window.addEventListener("trackChanged", renderSequencer);
 
   function selectTrack(index) {
     try {
@@ -640,13 +706,6 @@ function setupSequencer(vm) {
     currentSelectedCell = null;
     renderSequencer(); // Update visuals
   };
-
-  window.addEventListener("trackChanged", () => {
-    renderSequencer();
-    if (modal.style.display !== "none" && currentEditingStep !== null) {
-        renderLattice(currentEditingStep);
-    }
-  });
 
   // Initial render
   renderSequencer();

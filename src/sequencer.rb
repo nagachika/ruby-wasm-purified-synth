@@ -23,12 +23,13 @@ Block = Struct.new(:start_step, :length, :notes) do
 end
 
 class Track
-  attr_accessor :blocks, :synth, :mute
+  attr_accessor :blocks, :synth, :mute, :preset_name
 
   def initialize(synth)
     @synth = synth
     @blocks = []
     @mute = false
+    @preset_name = ""
   end
 
   def add_block(start_step, length)
