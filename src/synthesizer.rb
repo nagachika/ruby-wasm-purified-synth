@@ -196,44 +196,63 @@ class Synthesizer
   # Let's fix note_on to convert freq back to note or change Voice to take freq.
   # Converting freq to note: 69 + 12 * log2(freq / 440)
 
-  def freq_to_note(freq)
-    (69 + 12 * Math.log2(freq / 440.0)).round
-  end
-
-  def note_on(freq)
-    return if @ctx.typeof == "undefined"
-
-    if @ctx[:state] == "suspended"
-      @ctx.call(:resume)
+    def freq_to_note(freq)
+      (69 + 12 * Math.log2(freq / 440.0)).round
     end
-
-    # Stop existing voice for this frequency if any
-    if @active_voices[freq]
-      @active_voices[freq].stop_immediately
+  
+    def current_patch
+      {
+        nodes: [
+          { id: "vco", type: @osc_type == "noise" ? "Noise" : "Oscillator", freq_track: true, params: { type: @osc_type } },
+          { id: "vcf", type: "BiquadFilter", params: { type: @filter_type, frequency: @cutoff, q: @resonance } },
+          { id: "vca", type: "Gain", params: { gain: 0.0 } },
+          { id: "env", type: "ADSR", params: { attack: @attack, decay: @decay, sustain: @sustain, release: @release } },
+          @lfo_on ? { id: "lfo", type: "Oscillator", params: { type: @lfo_waveform, frequency: @lfo_rate } } : nil,
+          @lfo_on ? { id: "lfo_gain", type: "Gain", params: { gain: @lfo_depth } } : nil
+        ].compact,
+        connections: [
+          { from: "vco", to: "vcf" },
+          { from: "vcf", to: "vca" },
+          { from: "vca", to: "out" },
+          { from: "env", to: "vca.gain" },
+          @lfo_on ? { from: "lfo", to: "lfo_gain" } : nil,
+          @lfo_on ? { from: "lfo_gain", to: "vcf.frequency" } : nil
+        ].compact
+      }
     end
-
-    note_num = freq_to_note(freq)
-    # Pass self as params object for now
-    voice = Voice.new(@ctx, note_num, self, @master_gain)
-    @active_voices[freq] = voice
-    voice.start(@ctx[:currentTime].to_f)
-  end
-
-  def note_off(freq)
-    voice = @active_voices[freq]
-    if voice
-      voice.stop(@ctx[:currentTime].to_f)
-      @active_voices.delete(freq)
+  
+    def note_on(freq)
+      return if @ctx.typeof == "undefined"
+  
+      if @ctx[:state] == "suspended"
+        @ctx.call(:resume)
+      end
+  
+      # Stop existing voice for this frequency if any
+      if @active_voices[freq]
+        @active_voices[freq].stop_immediately
+      end
+  
+      note_num = freq_to_note(freq)
+      voice = Voice.new(@ctx, note_num, current_patch, self) 
+      @active_voices[freq] = voice
+      voice.start(@ctx[:currentTime].to_f)
     end
-  end
-
-  def schedule_note(freq, start_time, duration)
-    note_num = freq_to_note(freq)
-    voice = Voice.new(@ctx, note_num, self, @master_gain)
-    voice.start(start_time)
-    voice.stop(start_time + duration)
-  end
-
+  
+    def note_off(freq)
+      voice = @active_voices[freq]
+      if voice
+        voice.stop(@ctx[:currentTime].to_f)
+        @active_voices.delete(freq)
+      end
+    end
+  
+    def schedule_note(freq, start_time, duration)
+      note_num = freq_to_note(freq)
+      voice = Voice.new(@ctx, note_num, current_patch, self)
+      voice.start(start_time)
+      voice.stop(start_time + duration)
+    end
   # --- Preset Management ---
 
   def export_settings

@@ -1,19 +1,18 @@
-require_relative "nodes"
-require_relative "adsr_envelope"
+require "synthesizer/nodes"
+require "synthesizer/adsr_envelope"
 
 class Voice
   attr_reader :nodes, :envelopes
 
-  # patch_def is currently a placeholder for future JSON configuration
-  # synth_params is the legacy parameter object from Synthesizer class
-  def initialize(ctx, note_number, synth_params, output_node)
+  def initialize(ctx, note_number, patch, synth)
     @ctx = ctx
     @note_number = note_number
-    @params = synth_params
-    @output_node = output_node # The Global Mixer/Effects input
+    @patch = patch
+    @synth = synth # Reference to Synthesizer for shared assets like noise_buffer
+    @output_node = synth.master_gain # Standard output destination
 
     @nodes = {}
-    @envelopes = []
+    @envelopes = {}
 
     build_graph
   end
@@ -21,87 +20,99 @@ class Voice
   def build_graph
     freq = note_number_to_freq(@note_number)
 
-    # 1. VCO
-    # Future: Parse from patch_def
-    if @params.osc_type == "noise"
-      osc = NoiseNode.new(@ctx, @params.noise_buffer)
-    else
-      osc = OscillatorNode.new(@ctx, type: @params.osc_type, frequency: freq)
+    # 1. Create Nodes defined in the patch
+    @patch[:nodes].each do |n|
+      node = nil
+      case n[:type]
+      when "Oscillator"
+        node = OscillatorNode.new(@ctx)
+        node.type = n[:params][:type] if n.dig(:params, :type)
+        if n[:freq_track]
+          node.frequency.value = freq
+        elsif n.dig(:params, :frequency)
+          node.frequency.value = n[:params][:frequency]
+        end
+        @nodes[n[:id]] = node
+      when "Noise"
+        node = NoiseNode.new(@ctx, @synth.noise_buffer)
+        @nodes[n[:id]] = node
+      when "BiquadFilter"
+        node = BiquadFilterNode.new(@ctx)
+        node.type = n[:params][:type] if n.dig(:params, :type)
+        node.frequency.value = n[:params][:frequency] if n.dig(:params, :frequency)
+        node.Q.value = n[:params][:q] if n.dig(:params, :q)
+        @nodes[n[:id]] = node
+      when "Gain"
+        node = GainNode.new(@ctx)
+        node.gain.value = n[:params][:gain] if n.dig(:params, :gain)
+        @nodes[n[:id]] = node
+      when "Constant"
+        node = ConstantSourceNode.new(@ctx)
+        node.offset.value = n[:params][:offset] if n.dig(:params, :offset)
+        @nodes[n[:id]] = node
+      when "ADSR"
+        env = ADSREnvelope.new(
+          attack: n[:params][:attack] || 0.1,
+          decay: n[:params][:decay] || 0.1,
+          sustain: n[:params][:sustain] || 0.5,
+          release: n[:params][:release] || 0.5
+        )
+        @envelopes[n[:id]] = env
+      end
     end
-    @nodes[:vco] = osc
 
-    # 2. VCF
-    vcf = BiquadFilterNode.new(@ctx, type: @params.filter_type)
-    vcf.frequency.value = @params.cutoff
-    vcf.Q.value = @params.resonance
-    @nodes[:vcf] = vcf
+    # 2. Establish Connections
+    @patch[:connections].each do |conn|
+      source = @nodes[conn[:from]] || @envelopes[conn[:from]]
+      unless source
+        puts "Warning: Connection source '#{conn[:from]}' not found"
+        next
+      end
 
-    # 3. VCA
-    vca = GainNode.new(@ctx, gain: 0.0)
-    @nodes[:vca] = vca
+      target_path = conn[:to]
+      if target_path == "out"
+        source.connect(@output_node)
+      else
+        target_id, param_name = target_path.split('.')
+        target = @nodes[target_id]
+        unless target
+          puts "Warning: Connection target '#{target_id}' not found"
+          next
+        end
 
-    # 4. Envelope (ADSR -> VCA Gain)
-    env = ADSREnvelope.new(
-      attack: @params.attack,
-      decay: @params.decay,
-      sustain: @params.sustain,
-      release: @params.release
-    )
-    env.connect(vca.gain)
-    @envelopes << env
-
-    # 5. LFO
-    if @params.lfo_on
-      lfo = OscillatorNode.new(@ctx, type: @params.lfo_waveform, frequency: @params.lfo_rate)
-      lfo_gain = GainNode.new(@ctx, gain: @params.lfo_depth)
-
-      lfo.connect(lfo_gain)
-      lfo_gain.connect(vcf.frequency) # LFO -> Cutoff
-
-      @nodes[:lfo] = lfo
-      @nodes[:lfo_gain] = lfo_gain
+        if param_name
+          source.connect(target.param(param_name))
+        else
+          source.connect(target)
+        end
+      end
     end
-
-    # Connections
-    osc.connect(vcf)
-    vcf.connect(vca)
-    vca.connect(@output_node)
   end
 
   def start(time)
     t = time.to_f
-
-    # Start Sources
-    @nodes[:vco].start(t)
-    @nodes[:lfo]&.start(t)
-
-    # Trigger Envelopes
-    @envelopes.each { |env| env.trigger(t) }
+    # Start all source nodes (Oscillators, Noise, Constants)
+    @nodes.values.each { |n| n.start(t) if n.respond_to?(:start) }
+    # Trigger all envelopes
+    @envelopes.values.each { |e| e.trigger(t) }
   end
 
   def stop(time)
     t = time.to_f
+    # Release all envelopes
+    @envelopes.values.each { |e| e.release_at(t) }
 
-    # Release Envelopes
-    @envelopes.each { |env| env.release_at(t) }
+    # Find the longest release time to schedule node stopping
+    max_release = @envelopes.values.map(&:release).max || 0
+    stop_time = t + max_release + 0.1
 
-    # Schedule cleanup
-    # Stop oscillators after release phase
-    stop_time = t + @params.release + 0.1 # buffer
-    @nodes[:vco].stop(stop_time)
-    @nodes[:lfo]&.stop(stop_time)
-
-    # Note: Actual node cleanup/disconnect happens when they are GC'd
-    # or we can schedule a callback if we had a scheduler.
-    # For now, Web Audio handles stopped nodes efficiently.
+    @nodes.values.each { |n| n.stop(stop_time) if n.respond_to?(:stop) }
   end
 
-  # Immediate stop (panic/cut)
   def stop_immediately
     now = @ctx[:currentTime].to_f
-    @nodes[:vco].stop(now)
-    @nodes[:lfo]&.stop(now)
-    @nodes[:vca].disconnect
+    @nodes.values.each { |n| n.stop(now) if n.respond_to?(:stop) }
+    @nodes.values.each { |n| n.disconnect rescue nil }
   end
 
   private
