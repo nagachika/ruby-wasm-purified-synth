@@ -54,7 +54,7 @@ A polyphonic subtractive synthesizer and microtonal sequencer running entirely i
 ## Project Structure
 
 -   `index.html`: The main user interface with tabbed views for Synthesizer, Chord Editor, and Sequencer.
--   `main.js`: Initializes Ruby/WASM, handles UI events, and manages the main loop.
+-   `src/js/`: Modular JavaScript source code for UI handling, event management, and application initialization.
 -   `src/synthesizer.rb`: Core synthesis logic (Voice allocation, AudioNode graph, Presets).
 -   `src/sequencer.rb`: Logic for the Multi-track Sequencer, Tracks, Blocks, and Note Coordinates.
 -   `doc/TUNING.md`: Detailed explanation of the Just Intonation tuning system.
