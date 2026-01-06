@@ -49,16 +49,88 @@ const main = async () => {
   window.rubyVM = vm;
   console.log("Ruby VM loaded");
 
+  // Ensure JS module is loaded
+  vm.eval("require 'js'");
+
   startBtn.onclick = async () => {
     if (!window.audioCtx) window.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     if (window.audioCtx.state === 'suspended') await window.audioCtx.resume();
     overlay.style.display = "none";
 
     console.log("Loading Ruby scripts...");
-    const scriptRes = await fetch(`src/synthesizer.rb?_=${Date.now()}`);
-    if (scriptRes.ok) vm.eval(await scriptRes.text());
-    const seqRes = await fetch(`src/sequencer.rb?_=${Date.now()}`);
-    if (seqRes.ok) vm.eval(await seqRes.text());
+
+    const rubyFiles = [
+      "src/synthesizer/audio_node_wrapper.rb",
+      "src/synthesizer/nodes.rb",
+      "src/synthesizer/adsr_envelope.rb",
+      "src/synthesizer/voice.rb",
+      "src/synthesizer.rb",
+      "src/sequencer.rb"
+    ];
+
+    for (const file of rubyFiles) {
+      const res = await fetch(`${file}?_=${Date.now()}`);
+      if (!res.ok) {
+        console.error(`Failed to load ${file}`);
+        continue;
+      }
+      const text = await res.text();
+
+      // Pass content to Ruby via global variable to avoid escaping issues
+      window._rubyFileContent = text;
+
+      // Force absolute path for VFS to ensure it matches $LOAD_PATH
+      const vfsPath = '/' + file;
+
+      // Ensure directory exists
+      const dir = vfsPath.substring(0, vfsPath.lastIndexOf('/'));
+      if (dir) {
+        vm.eval(`
+          parts = '${dir}'.split('/').reject(&:empty?)
+          current = ''
+          parts.each do |part|
+            current = current + '/' + part
+            Dir.mkdir(current) unless Dir.exist?(current)
+          end
+        `);
+      }
+
+      // Write file
+      vm.eval(`File.write('${vfsPath}', JS.global[:_rubyFileContent])`);
+
+      // Verify write
+      const exists = vm.eval(`File.exist?('${vfsPath}')`).toJS();
+      if (!exists) {
+        console.error(`Failed to write ${vfsPath}`);
+      }
+    }
+
+    // Clean up
+    delete window._rubyFileContent;
+
+    // Add src to load path
+    vm.eval("$LOAD_PATH.unshift '/src'");
+
+    // Load entry points with error handling
+    const loadScript = (script) => {
+      try {
+        vm.eval(`
+          begin
+            require '${script}'
+          rescue LoadError => e
+            puts "Error loading ${script}: #{e.message}"
+            puts e.backtrace
+            raise e
+          end
+        `);
+        console.log(`Loaded ${script}`);
+      } catch (e) {
+        console.error(`JS Exception loading ${script}`, e);
+      }
+    };
+
+    loadScript('/src/synthesizer.rb');
+    loadScript('/src/sequencer.rb');
 
     // Init Sequencer & Synth
     vm.eval("$sequencer = Sequencer.new(JS.eval('return window.audioCtx;'))");

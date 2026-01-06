@@ -116,7 +116,7 @@ class Sequencer
       # Update global $synth reference for UI
       $synth = current_track.synth
       # Update global analyser for Visualizer
-      JS.global[:synthAnalyser] = current_track.synth.analyser_node
+      JS.global[:synthAnalyser] = current_track.synth.analyser_node.native_node
     end
   end
 

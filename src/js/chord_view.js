@@ -111,7 +111,7 @@ export function setupChordView(vm) {
         currentChordName = name;
         // Deep copy notes
         currentChordNotes = JSON.parse(JSON.stringify(notes));
-        
+
         // Restore dimension
         if (dim) {
             yAxisSel.value = dim;

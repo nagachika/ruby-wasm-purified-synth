@@ -32,19 +32,19 @@ export function drawTetrisShape(ctx, notes, w, h, dimension) {
 
     const rangeX = maxX - minX + 1;
     const rangeY = maxY - minY + 1;
-    
+
     // Decrease max cell size and increase margin to ensure it fits
     const cellSize = Math.min(w / (rangeX + 1), h / (rangeY + 1), 8);
-    
+
     const offsetX = (w - (rangeX * cellSize)) / 2 - (minX * cellSize);
     const offsetY = (h - (rangeY * cellSize)) / 2;
 
     coords.forEach(p => {
         const cx = offsetX + p.x * cellSize;
         const cy = offsetY + (maxY - p.y) * cellSize;
-        
+
         ctx.fillStyle = "#4dabf7";
-        
+
         if (p.x === 0 && p.y === 0) {
             ctx.beginPath();
             ctx.arc(cx + cellSize/2, cy + cellSize/2, cellSize/2 - 1, 0, Math.PI * 2);

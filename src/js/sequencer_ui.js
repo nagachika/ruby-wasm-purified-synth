@@ -314,7 +314,7 @@ export function setupSequencer(vm) {
                 canvas.width = cw > 0 ? cw : 1;
                 canvas.height = ch;
                 canvas.style.display = "block"; // Prevent inline spacing issues
-                
+
                 try {
                     const notesJson = vm.eval(`$sequencer.get_block_notes_json(${t}, ${b.start})`).toString();
                     const notes = JSON.parse(notesJson);
@@ -479,9 +479,9 @@ export function setupSequencer(vm) {
       if (measuresDisplay) measuresDisplay.textContent = measuresInput.value;
       try { vm.eval(`$sequencer.total_bars = ${measuresInput.value}`); renderSequencer(); } catch(e){}
   });
-  bpmInput.addEventListener("input", () => { 
+  bpmInput.addEventListener("input", () => {
       if (bpmDisplay) bpmDisplay.textContent = bpmInput.value;
-      try{vm.eval(`$sequencer.bpm = ${bpmInput.value}`);}catch(e){} 
+      try{vm.eval(`$sequencer.bpm = ${bpmInput.value}`);}catch(e){}
   });
   rootFreqInput.addEventListener("change", () => { try{vm.eval(`$sequencer.root_freq = ${rootFreqInput.value}`);}catch(e){} });
   yAxisSelect.addEventListener("change", () => { try{vm.eval(`$sequencer.y_axis_dim = ${yAxisSelect.value}`);}catch(e){} });
