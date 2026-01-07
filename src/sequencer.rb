@@ -71,6 +71,18 @@ class Sequencer
 
     @total_steps = 128 # Default 4 bars (32 steps * 4)
 
+    # --- Master Bus ---
+    @master_gain = GainNode.new(@ctx, gain: 1.0)
+    @compressor = DynamicsCompressorNode.new(@ctx)
+    @compressor.threshold.value = -24.0
+    @compressor.knee.value = 30.0
+    @compressor.ratio.value = 12.0
+    @compressor.attack.value = 0.003
+    @compressor.release.value = 0.25
+
+    @master_gain.connect(@compressor)
+    @compressor.connect(@ctx[:destination])
+
     @tracks = []
     add_track # Add initial track
 
@@ -91,6 +103,9 @@ class Sequencer
 
   def add_track
     synth = Synthesizer.new(@ctx)
+    # Connect Synth output to Sequencer Master Bus
+    synth.connect(@master_gain)
+    
     track = Track.new(synth)
     @tracks << track
     select_track(@tracks.length - 1)

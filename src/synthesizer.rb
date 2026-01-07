@@ -73,24 +73,37 @@ class Synthesizer
     @reverb_wet_gain.connect(@reverb_output)
     @reverb_dry_gain.connect(@reverb_output)
 
-    # 3. Dynamics Compressor (Mastering)
-    @compressor = DynamicsCompressorNode.new(@ctx)
-    @compressor.threshold.value = -24.0
-    @compressor.knee.value = 30.0
-    @compressor.ratio.value = 12.0
-    @compressor.attack.value = 0.003
-    @compressor.release.value = 0.25
-
-    @reverb_output.connect(@compressor)
-
-    # 4. Final Analysis & Output
+    # 3. Final Analysis & Output
     @analyser_node = AnalyserNode.new(@ctx)
     @analyser_node.fft_size = 2048
 
-    @compressor.connect(@analyser_node)
-    @analyser_node.connect(@ctx[:destination])
+    # Reverb Output -> Analyser
+    @reverb_output.connect(@analyser_node)
+    
+    # Note: We do NOT connect to destination automatically anymore.
+    # Use connect(destination) or connect_to_destination_with_compressor.
 
     update_reverb_buffer
+  end
+
+  def connect(destination)
+    @analyser_node.connect(destination)
+  end
+
+  def connect_to_destination_with_compressor
+    # Create a dedicated compressor for standalone usage
+    comp = DynamicsCompressorNode.new(@ctx)
+    comp.threshold.value = -24.0
+    comp.knee.value = 30.0
+    comp.ratio.value = 12.0
+    comp.attack.value = 0.003
+    comp.release.value = 0.25
+    
+    @analyser_node.connect(comp)
+    comp.connect(@ctx[:destination])
+    
+    # Return comp so we can keep track if needed, though mostly fire-and-forget for simple usage
+    comp
   end
 
   def setup_default_params

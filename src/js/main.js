@@ -138,6 +138,7 @@ const main = async () => {
 
     // Create a standalone synth for Chord Preview
     vm.eval("$previewSynth = Synthesizer.new(JS.eval('return window.audioCtx;'))");
+    vm.eval("$previewSynth.connect_to_destination_with_compressor");
 
     console.log("Initialized");
 
