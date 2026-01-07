@@ -69,24 +69,26 @@ The synthesis structure is defined by a data object (Patch). This allows for ser
 {
   "voice": {
     "nodes": [
-      { "id": "osc1", "type": "Oscillator", "params": { "type": "sawtooth", "frequency": 0 } },
-      { "id": "osc2", "type": "Oscillator", "params": { "type": "sine", "detune": 0 } },
+      { "id": "osc1", "type": "Oscillator", "freq_track": true, "params": { "type": "sawtooth" } },
+      { "id": "osc2", "type": "Oscillator", "freq_track": true, "params": { "type": "sine", "detune": 10 } },
       { "id": "lfo1", "type": "Oscillator", "params": { "type": "sine", "frequency": 5 } },
-      { "id": "filter", "type": "BiquadFilter", "params": { "type": "lowpass", "frequency": 2000 } },
+      { "id": "lfo_depth", "type": "Gain", "params": { "gain": 100 } },
+      { "id": "filter", "type": "BiquadFilter", "params": { "type": "lowpass", "frequency": 2000, "q": 1.0 } },
       { "id": "vca", "type": "Gain", "params": { "gain": 0 } },
-      { "id": "env1", "type": "ADSR", "params": { "a": 0.01, "d": 0.1, "s": 0.5, "r": 0.5 } }
+      { "id": "env1", "type": "ADSR", "params": { "attack": 0.01, "decay": 0.1, "sustain": 0.5, "release": 0.5 } }
     ],
     "connections": [
-      { "source": "osc1", "target": "filter" },
-      { "source": "osc2", "target": "filter" },
-      // Modulation: LFO -> Osc1 Detune
-      { "source": "lfo1", "target": "osc1.detune", "amount": 100 },
+      { "from": "osc1", "to": "filter" },
+      { "from": "osc2", "to": "filter" },
+      // Modulation: LFO -> Gain (Depth) -> Osc1 Detune
+      { "from": "lfo1", "to": "lfo_depth" },
+      { "from": "lfo_depth", "to": "osc1.detune" },
       // Audio Chain
-      { "source": "filter", "target": "vca" },
+      { "from": "filter", "to": "vca" },
       // Envelope Control
-      { "source": "env1", "target": "vca.gain" },
+      { "from": "env1", "to": "vca.gain" },
       // Final Output of Voice
-      { "source": "vca", "target": "out" }
+      { "from": "vca", "to": "out" }
     ]
   },
   "global": {
