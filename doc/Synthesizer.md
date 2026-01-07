@@ -6,7 +6,7 @@ This document outlines the refactoring plan for the `Synthesizer` class, transit
 
 The synthesizer follows a **Semi-Modular Polyphonic** architecture.
 
-*   **Global Graph (Shared)**: A fixed (or configurable) chain of effects (Delay, Reverb, Compressor) applied to the mixed output of all voices.
+*   **Global Graph (Shared)**: A fixed (or configurable) chain of effects (Delay, Reverb) applied to the mixed output of all voices within the synthesizer.
 *   **Voice Graph (Polyphonic)**: A dynamic graph of nodes instantiated for *each* active note. Unlike the previous implementation, the internal structure of a Voice is **fully modular**, allowing arbitrary connections between oscillators, filters, and envelopes.
 
 ## 2. Structural Layers
@@ -27,13 +27,19 @@ When a note is triggered, a new `Voice` instance is created. This instance build
 2.  **Note Off**: Release phase of envelopes triggered.
 3.  **Cleanup**: When the amplitude envelope finishes (or a timeout occurs), the nodes are disconnected and destroyed.
 
-### 2.2 Global Layer (Master FX)
-Processes the summed output of all active voices. Since creating Reverbs/Delays for every voice is computationally expensive, these remain global.
+### 2.2 Global Layer (Track FX)
+Processes the summed output of all active voices. Since creating Reverbs/Delays for every voice is computationally expensive, these remain global per synthesizer instance.
 
 **Chain:**
-`Voice Sum` -> `Mix Node` -> `Delay` -> `Reverb` -> `DynamicsCompressor` -> `Master Gain` -> (Output)
+`Voice Sum` -> `Mix Node` -> `Delay` -> `Reverb` -> `Analyser` -> (Output to Master Bus)
 
-*   **Output**: The `Synthesizer` does not connect directly to `AudioContext.destination`. It exposes its final output node (or a `connect` method) so the `Sequencer` or host app can route it (e.g., to a visualizer or recording node).
+*   **Output**: The `Synthesizer` does not connect directly to `AudioContext.destination`. It exposes its final output node (or a `connect` method) so the `Sequencer` or host app can route it.
+
+### 2.3 Master Layer (Sequencer/Mixer)
+The `Sequencer` (or a dedicated Mixer class) collects outputs from all `Synthesizer` tracks and applies final mastering effects.
+
+**Chain:**
+`Track 1 + Track 2 + ...` -> `Master Gain` -> `DynamicsCompressor` -> `AudioContext.destination`
 
 ## 3. Node Types
 
