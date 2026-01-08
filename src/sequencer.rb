@@ -209,6 +209,36 @@ class Sequencer
     end
   end
 
+  # Update notes in a block using Float32Array/Buffer for efficiency
+  # flat_array: [a1, b1, c1, d1, e1, a2, ...]
+  def update_block_notes_buffer(track_index, start_step, flat_array)
+    track = @tracks[track_index]
+    return unless track
+
+    block = track.blocks.find { |b| b.start_step == start_step }
+    return unless block
+
+    # Clear existing
+    block.notes.clear
+
+    # Iterate JS TypedArray
+    len = flat_array[:length].to_i
+    count = len / 5
+    
+    count.times do |i|
+       base = i * 5
+       # Access elements directly from TypedArray (still cross-boundary calls but fewer than JSON object tree)
+       a = flat_array[base].to_f
+       b = flat_array[base+1].to_f
+       c = flat_array[base+2].to_f
+       d = flat_array[base+3].to_f
+       e = flat_array[base+4].to_f
+       
+       new_note = NoteCoord.new(a, b, c, d, e)
+       block.notes << new_note
+    end
+  end
+
   # Helper for Lattice Editor logic (reusing existing toggling logic but on Block)
   def toggle_note_in_block(track_index, start_step, b, y_val)
     track = @tracks[track_index]

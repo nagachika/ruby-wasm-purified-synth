@@ -424,10 +424,30 @@ export function setupSequencer(vm) {
   selectorClose.onclick = () => selectorModal.style.display = "none";
 
   function applyChordToBlock(t, s, name, notes) {
-      const json = JSON.stringify(notes);
-      window._tempChordNotes = json;
+      const len = notes.length;
+      const totalFloats = len * 5;
+      
+      // Optimization: Use SharedArrayBuffer if available, otherwise standard ArrayBuffer
+      // This allows efficient numeric transfer.
+      let buffer;
+      if (window.crossOriginIsolated && window.SharedArrayBuffer) {
+          buffer = new SharedArrayBuffer(totalFloats * 4);
+      } else {
+          buffer = new ArrayBuffer(totalFloats * 4);
+      }
+      
+      const floatView = new Float32Array(buffer);
+      for(let i = 0; i < len; i++) {
+          floatView[i * 5 + 0] = notes[i].a;
+          floatView[i * 5 + 1] = notes[i].b;
+          floatView[i * 5 + 2] = notes[i].c;
+          floatView[i * 5 + 3] = notes[i].d;
+          floatView[i * 5 + 4] = notes[i].e;
+      }
 
-      vm.eval(`$sequencer.update_block_notes(${t}, ${s}, JS.global[:_tempChordNotes])`);
+      window._tempChordBuffer = floatView;
+
+      vm.eval(`$sequencer.update_block_notes_buffer(${t}, ${s}, JS.global[:_tempChordBuffer])`);
       vm.eval(`
         t = $sequencer.tracks[${t}]
         b = t.blocks.find { |blk| blk.start_step == ${s} }
