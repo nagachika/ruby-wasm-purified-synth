@@ -211,10 +211,17 @@ class Synthesizer
     end
 
     def current_patch
+      is_comb = @filter_type == "comb"
+      filter_node = if is_comb
+        { id: "vcf", type: "CombFilter", params: { frequency: @cutoff, q: @resonance } }
+      else
+        { id: "vcf", type: "BiquadFilter", params: { type: @filter_type, frequency: @cutoff, q: @resonance } }
+      end
+
       {
         nodes: [
           { id: "vco", type: @osc_type == "noise" ? "Noise" : "Oscillator", freq_track: true, params: { type: @osc_type } },
-          { id: "vcf", type: "BiquadFilter", params: { type: @filter_type, frequency: @cutoff, q: @resonance } },
+          filter_node,
           { id: "vca", type: "Gain", params: { gain: 0.0 } },
           { id: "env", type: "ADSR", params: { attack: @attack, decay: @decay, sustain: @sustain, release: @release } },
           @lfo_on ? { id: "lfo", type: "Oscillator", params: { type: @lfo_waveform, frequency: @lfo_rate } } : nil,
@@ -226,7 +233,7 @@ class Synthesizer
           { from: "vca", to: "out" },
           { from: "env", to: "vca.gain" },
           @lfo_on ? { from: "lfo", to: "lfo_gain" } : nil,
-          @lfo_on ? { from: "lfo_gain", to: "vcf.frequency" } : nil
+          (@lfo_on && !is_comb) ? { from: "lfo_gain", to: "vcf.frequency" } : nil
         ].compact
       }
     end

@@ -42,6 +42,11 @@ class Voice
         node.frequency.value = n[:params][:frequency] if n.dig(:params, :frequency)
         node.Q.value = n[:params][:q] if n.dig(:params, :q)
         @nodes[n[:id]] = node
+      when "CombFilter"
+        node = CombFilterNode.new(@ctx)
+        node.set_frequency(n[:params][:frequency]) if n.dig(:params, :frequency)
+        node.set_q(n[:params][:q]) if n.dig(:params, :q)
+        @nodes[n[:id]] = node
       when "Gain"
         node = GainNode.new(@ctx)
         node.gain.value = n[:params][:gain] if n.dig(:params, :gain)

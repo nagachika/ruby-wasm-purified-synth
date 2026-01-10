@@ -126,6 +126,65 @@ class DynamicsCompressorNode < AudioNodeWrapper
   end
 end
 
+class CombFilterNode < AudioNodeWrapper
+  def initialize(ctx, frequency: 440.0, q: 0.0)
+    @input_gain = ctx.call(:createGain)
+    @output_gain = ctx.call(:createGain)
+    @delay = ctx.call(:createDelay, 1.0) # Max delay 1s
+    @feedback = ctx.call(:createGain)
+
+    super(ctx, @input_gain)
+
+    # Topology:
+    # Input -> Output (Dry)
+    # Input -> Delay -> Output (Wet)
+    # Delay -> Feedback -> Delay (Feedback Loop)
+
+    @input_gain.connect(@output_gain)
+    @input_gain.connect(@delay)
+    @delay.connect(@output_gain)
+    @delay.connect(@feedback)
+    @feedback.connect(@delay)
+
+    self.set_frequency(frequency)
+    self.set_q(q)
+  end
+
+  def connect(destination, output_index = 0, input_index = 0)
+    dest_node = destination.is_a?(AudioNodeWrapper) ? destination.native_node : destination
+    @output_gain.call(:connect, dest_node, output_index, input_index)
+    self
+  end
+
+  def set_frequency(hz)
+    h = hz.to_f
+    h = 20.0 if h < 20.0
+    # f = 1/T => T = 1/f
+    @delay[:delayTime][:value] = 1.0 / h
+  end
+
+  def set_q(val)
+    # Map Q (0..10+) to Feedback (0..0.95)
+    f = val.to_f * 0.1
+    f = 0.95 if f > 0.95
+    f = 0.0 if f < 0.0
+    @feedback[:gain][:value] = f
+  end
+
+  def param(name)
+    case name.to_s
+    when "frequency"
+      # Exposing delayTime as "frequency" for modulation is risky (Hz vs Seconds)
+      # But returning it allows connections to succeed, even if physics are weird.
+      AudioParamWrapper.new(@delay[:delayTime])
+    when "q", "Q", "resonance"
+      AudioParamWrapper.new(@feedback[:gain])
+    else
+      super(name)
+    end
+  end
+end
+
 class NoiseNode < AudioNodeWrapper
   def initialize(ctx, buffer)
     native = ctx.call(:createBufferSource)
