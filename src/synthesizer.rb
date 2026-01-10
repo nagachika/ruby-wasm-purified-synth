@@ -4,7 +4,7 @@ require_relative "synthesizer/voice"
 
 class Synthesizer
   # Parameters
-  attr_accessor :osc_type       # "sine", "square", "sawtooth", "triangle"
+  attr_accessor :osc_type       # "sine", "square", "sawtooth", "triangle", "noise"
   attr_accessor :filter_type    # "lowpass", "highpass", "bandpass", "notch"
   attr_accessor :cutoff         # Hz
   attr_accessor :resonance      # Q factor
@@ -17,8 +17,9 @@ class Synthesizer
 
   attr_reader :master_gain, :analyser_node
 
-  def initialize(ctx)
+  def initialize(ctx, enable_effects: true)
     @ctx = ctx
+    @enable_effects = enable_effects
 
     # Defaults
     @delay_time_val = 0.3
@@ -38,52 +39,55 @@ class Synthesizer
     # --- Master Output ---
     @master_gain = GainNode.new(@ctx, gain: 0.5)
 
-    # --- Delay Effect ---
-    @delay_node = DelayNode.new(@ctx, delay_time: @delay_time_val)
-    @delay_feedback_gain = GainNode.new(@ctx, gain: @delay_feedback_val)
-    @delay_wet_gain = GainNode.new(@ctx, gain: @delay_mix_val)
-    @delay_dry_gain = GainNode.new(@ctx, gain: 1.0 - @delay_mix_val)
-    @delay_output = GainNode.new(@ctx)
+    if @enable_effects
+      # --- Delay Effect ---
+      @delay_node = DelayNode.new(@ctx, delay_time: @delay_time_val)
+      @delay_feedback_gain = GainNode.new(@ctx, gain: @delay_feedback_val)
+      @delay_wet_gain = GainNode.new(@ctx, gain: @delay_mix_val)
+      @delay_dry_gain = GainNode.new(@ctx, gain: 1.0 - @delay_mix_val)
+      @delay_output = GainNode.new(@ctx)
 
-    # --- Reverb Effect ---
-    @convolver = ConvolverNode.new(@ctx)
-    @reverb_wet_gain = GainNode.new(@ctx, gain: @reverb_mix_val)
-    @reverb_dry_gain = GainNode.new(@ctx, gain: 1.0 - @reverb_mix_val)
-    @reverb_output = GainNode.new(@ctx)
+      # --- Reverb Effect ---
+      @convolver = ConvolverNode.new(@ctx)
+      @reverb_wet_gain = GainNode.new(@ctx, gain: @reverb_mix_val)
+      @reverb_dry_gain = GainNode.new(@ctx, gain: 1.0 - @reverb_mix_val)
+      @reverb_output = GainNode.new(@ctx)
 
-    # --- Routing Chain ---
-    # Input to Global Graph is @master_gain (Voices connect here)
+      # --- Routing Chain ---
+      # Input to Global Graph is @master_gain (Voices connect here)
 
-    # 1. Delay Block
-    @master_gain.connect(@delay_node)
-    @master_gain.connect(@delay_dry_gain)
+      # 1. Delay Block
+      @master_gain.connect(@delay_node)
+      @master_gain.connect(@delay_dry_gain)
 
-    @delay_node.connect(@delay_feedback_gain)
-    @delay_feedback_gain.connect(@delay_node)
+      @delay_node.connect(@delay_feedback_gain)
+      @delay_feedback_gain.connect(@delay_node)
 
-    @delay_node.connect(@delay_wet_gain)
-    @delay_wet_gain.connect(@delay_output)
-    @delay_dry_gain.connect(@delay_output)
+      @delay_node.connect(@delay_wet_gain)
+      @delay_wet_gain.connect(@delay_output)
+      @delay_dry_gain.connect(@delay_output)
 
-    # 2. Reverb Block
-    @delay_output.connect(@convolver)
-    @delay_output.connect(@reverb_dry_gain)
+      # 2. Reverb Block
+      @delay_output.connect(@convolver)
+      @delay_output.connect(@reverb_dry_gain)
 
-    @convolver.connect(@reverb_wet_gain)
-    @reverb_wet_gain.connect(@reverb_output)
-    @reverb_dry_gain.connect(@reverb_output)
+      @convolver.connect(@reverb_wet_gain)
+      @reverb_wet_gain.connect(@reverb_output)
+      @reverb_dry_gain.connect(@reverb_output)
 
-    # 3. Final Analysis & Output
-    @analyser_node = AnalyserNode.new(@ctx)
-    @analyser_node.fft_size = 2048
+      # 3. Final Analysis & Output
+      @analyser_node = AnalyserNode.new(@ctx)
+      @analyser_node.fft_size = 2048
 
-    # Reverb Output -> Analyser
-    @reverb_output.connect(@analyser_node)
-    
-    # Note: We do NOT connect to destination automatically anymore.
-    # Use connect(destination) or connect_to_destination_with_compressor.
+      # Reverb Output -> Analyser
+      @reverb_output.connect(@analyser_node)
 
-    update_reverb_buffer
+      update_reverb_buffer
+    else
+      # Minimal graph
+      @analyser_node = AnalyserNode.new(@ctx)
+      @master_gain.connect(@analyser_node)
+    end
   end
 
   def connect(destination)
@@ -98,10 +102,10 @@ class Synthesizer
     comp.ratio.value = 12.0
     comp.attack.value = 0.003
     comp.release.value = 0.25
-    
+
     @analyser_node.connect(comp)
     comp.connect(@ctx[:destination])
-    
+
     # Return comp so we can keep track if needed, though mostly fire-and-forget for simple usage
     comp
   end
@@ -149,29 +153,29 @@ class Synthesizer
   # Custom setters
   def delay_time=(val)
     @delay_time_val = val.to_f
-    @delay_node.delay_time.value = @delay_time_val
+    @delay_node.delay_time.value = @delay_time_val if @delay_node
   end
 
   def delay_feedback=(val)
     @delay_feedback_val = val.to_f
-    @delay_feedback_gain.gain.value = @delay_feedback_val
+    @delay_feedback_gain.gain.value = @delay_feedback_val if @delay_feedback_gain
   end
 
   def delay_mix=(val)
     @delay_mix_val = val.to_f
-    @delay_wet_gain.gain.value = @delay_mix_val
-    @delay_dry_gain.gain.value = 1.0 - @delay_mix_val
+    @delay_wet_gain.gain.value = @delay_mix_val if @delay_wet_gain
+    @delay_dry_gain.gain.value = 1.0 - @delay_mix_val if @delay_dry_gain
   end
 
   def reverb_seconds=(val)
     @reverb_seconds_val = val.to_f
-    update_reverb_buffer
+    update_reverb_buffer if @enable_effects
   end
 
   def reverb_mix=(val)
     @reverb_mix_val = val.to_f
-    @reverb_wet_gain.gain.value = @reverb_mix_val
-    @reverb_dry_gain.gain.value = 1.0 - @reverb_mix_val
+    @reverb_wet_gain.gain.value = @reverb_mix_val if @reverb_wet_gain
+    @reverb_dry_gain.gain.value = 1.0 - @reverb_mix_val if @reverb_dry_gain
   end
 
   def volume=(val)
@@ -179,6 +183,7 @@ class Synthesizer
   end
 
   def update_reverb_buffer
+    return unless @enable_effects
     rate = @ctx[:sampleRate].to_f
     length = (rate * @reverb_seconds_val).to_i
 
@@ -201,18 +206,10 @@ class Synthesizer
     @convolver.buffer = JS.global[:_tempReverbBuffer]
   end
 
-  # The note argument here is treated as frequency (Hz) in the old code,
-  # but our new Voice expects MIDI note number or we need to convert.
-  # The UI sends Frequency. Let's adapt Voice to accept Freq or convert here.
-  # Wait, the UI sends freq. Let's make Voice flexible or convert freq to note locally.
-  # Actually, Voice implementation I wrote used note_number.
-  # Let's fix note_on to convert freq back to note or change Voice to take freq.
-  # Converting freq to note: 69 + 12 * log2(freq / 440)
-
     def freq_to_note(freq)
       (69 + 12 * Math.log2(freq / 440.0)).round
     end
-  
+
     def current_patch
       {
         nodes: [
@@ -233,25 +230,25 @@ class Synthesizer
         ].compact
       }
     end
-  
+
     def note_on(freq)
       return if @ctx.typeof == "undefined"
-  
+
       if @ctx[:state] == "suspended"
         @ctx.call(:resume)
       end
-  
+
       # Stop existing voice for this frequency if any
       if @active_voices[freq]
         @active_voices[freq].stop_immediately
       end
-  
+
       note_num = freq_to_note(freq)
-      voice = Voice.new(@ctx, note_num, current_patch, self) 
+      voice = Voice.new(@ctx, note_num, current_patch, self)
       @active_voices[freq] = voice
       voice.start(@ctx[:currentTime].to_f)
     end
-  
+
     def note_off(freq)
       voice = @active_voices[freq]
       if voice
@@ -259,11 +256,11 @@ class Synthesizer
         @active_voices.delete(freq)
       end
     end
-  
-    def schedule_note(freq, start_time, duration)
+
+    def schedule_note(freq, start_time, duration, velocity: 0.8)
       note_num = freq_to_note(freq)
       voice = Voice.new(@ctx, note_num, current_patch, self)
-      voice.start(start_time)
+      voice.start(start_time, velocity: velocity)
       voice.stop(start_time + duration)
     end
   # --- Preset Management ---
@@ -309,11 +306,13 @@ class Synthesizer
     self.lfo_rate = data[:lfo_rate].to_f
     self.lfo_depth = data[:lfo_depth].to_f
 
-    self.delay_time = data[:delay_time].to_f
-    self.delay_feedback = data[:delay_feedback].to_f
-    self.delay_mix = data[:delay_mix].to_f
+    if @enable_effects
+      self.delay_time = data[:delay_time].to_f
+      self.delay_feedback = data[:delay_feedback].to_f
+      self.delay_mix = data[:delay_mix].to_f
 
-    self.reverb_seconds = data[:reverb_seconds].to_f
-    self.reverb_mix = data[:reverb_mix].to_f
+      self.reverb_seconds = data[:reverb_seconds].to_f
+      self.reverb_mix = data[:reverb_mix].to_f
+    end
   end
 end

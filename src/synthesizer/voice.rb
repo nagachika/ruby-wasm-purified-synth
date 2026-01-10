@@ -89,12 +89,12 @@ class Voice
     end
   end
 
-  def start(time)
+  def start(time, velocity: 0.8)
     t = time.to_f
     # Start all source nodes (Oscillators, Noise, Constants)
     @nodes.values.each { |n| n.start(t) if n.respond_to?(:start) }
     # Trigger all envelopes
-    @envelopes.values.each { |e| e.trigger(t) }
+    @envelopes.values.each { |e| e.trigger(t, velocity) }
   end
 
   def stop(time)

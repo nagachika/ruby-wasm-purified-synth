@@ -13,13 +13,13 @@ class ADSREnvelope
     @target_param = param
   end
 
-  def trigger(time)
+  def trigger(time, velocity = 1.0)
     return unless @target_param
 
     t = time.to_f
     # Web Audio ramp quirks: target value for exponential ramp cannot be 0
     min_val = 0.001
-    peak_val = 1.0
+    peak_val = [velocity.to_f, min_val].max
 
     @target_param.cancel_scheduled_values(t)
     @target_param.set_value_at_time(min_val, t)
@@ -28,7 +28,7 @@ class ADSREnvelope
     @target_param.linear_ramp_to_value_at_time(peak_val, t + @attack)
 
     # Decay
-    sus_val = (@sustain <= 0) ? min_val : @sustain
+    sus_val = (@sustain * peak_val <= min_val) ? min_val : (@sustain * peak_val)
     @target_param.exponential_ramp_to_value_at_time(sus_val, t + @attack + @decay)
   end
 

@@ -5,6 +5,7 @@ import { setupPresets } from "./presets.js";
 import { setupSequencer } from "./sequencer_ui.js";
 import { setupUI, setupKeyboard } from "./synth_ui.js";
 import { setupVisualizer } from "./visualizer.js";
+import { setupPatternEditor } from "./pattern_editor.js";
 
 const startBtn = document.getElementById("start-btn");
 const overlay = document.getElementById("start-overlay");
@@ -13,13 +14,16 @@ function setupTabs() {
   const tabSynth = document.getElementById("tab-synth");
   const tabSeq = document.getElementById("tab-seq");
   const tabChord = document.getElementById("tab-chord");
+  const tabPattern = document.getElementById("tab-pattern");
+
   const viewSynth = document.getElementById("view-synthesizer");
   const viewSeq = document.getElementById("view-sequencer");
   const viewChord = document.getElementById("view-chord");
+  const viewPattern = document.getElementById("view-pattern");
 
   function switchTab(view) {
-    [tabSynth, tabSeq, tabChord].forEach(t => t.classList.remove("active"));
-    [viewSynth, viewSeq, viewChord].forEach(v => v.classList.remove("active"));
+    [tabSynth, tabSeq, tabChord, tabPattern].forEach(t => t && t.classList.remove("active"));
+    [viewSynth, viewSeq, viewChord, viewPattern].forEach(v => v && v.classList.remove("active"));
 
     if (view === "synth") {
       tabSynth.classList.add("active");
@@ -31,12 +35,16 @@ function setupTabs() {
     } else if (view === "chord") {
       tabChord.classList.add("active");
       viewChord.classList.add("active");
+    } else if (view === "pattern") {
+      tabPattern.classList.add("active");
+      viewPattern.classList.add("active");
     }
   }
 
   tabSynth.onclick = () => switchTab("synth");
   tabSeq.onclick = () => switchTab("seq");
   tabChord.onclick = () => switchTab("chord");
+  if (tabPattern) tabPattern.onclick = () => switchTab("pattern");
 }
 
 const main = async () => {
@@ -65,6 +73,7 @@ const main = async () => {
       "src/synthesizer/adsr_envelope.rb",
       "src/synthesizer/voice.rb",
       "src/synthesizer.rb",
+      "src/synthesizer/drum_machine.rb",
       "src/sequencer.rb"
     ];
 
@@ -150,6 +159,7 @@ const main = async () => {
     setupSequencer(vm);
     setupPresets(vm);
     setupChordView(vm);
+    setupPatternEditor(vm);
   };
 };
 

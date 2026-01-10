@@ -13,13 +13,18 @@ A polyphonic subtractive synthesizer and microtonal sequencer running entirely i
     *   **Presets**: Save and load your sound design settings.
 *   **Multi-Track Lattice Sequencer**:
     *   **Multiple Tracks**: Compose with multiple independent synthesizer instances.
+    *   **Melodic & Rhythm Tracks**: Combine microtonal melody tracks with pattern-based drum tracks.
     *   **Block-Based Arrangement**: Arrange your composition using reusable patterns (blocks).
     *   **Microtonal Tuning**: Just Intonation tuning based on harmonic ratios (3rd, 5th, 7th, 11th harmonics).
+    *   **Swing/Shuffle**: Adjustable swing parameter for rhythmic groove.
+*   **Rhythm Pattern Editor**:
+    *   **16-Step Grid**: Classic step-sequencer interface for creating drum beats.
+    *   **Drum Machine**: Dedicated lightweight synthesis engine for Kick, Snare, HiHat, and OpenHat.
 *   **Chord Editor**:
     *   **Visual Design**: Construct complex microtonal chords on a harmonic lattice grid.
     *   **Library**: Save and organize your custom chords for use in the sequencer.
 *   **Visualizer**: Real-time Oscilloscope and Spectrum Analyzer.
-*   **Interactive UI**: Tabbed interface for Synthesis, Chord design, and Sequencing.
+*   **Interactive UI**: Tabbed interface for Synthesis, Chord design, Sequencing, and Pattern editing.
 
 ## Quick Start
 
@@ -46,17 +51,21 @@ A polyphonic subtractive synthesizer and microtonal sequencer running entirely i
         *   Use the **Y-Axis Dimension** selector to explore 5-limit (Major 3rd), 7-limit (Harmonic 7th), or 11-limit harmonies.
         *   Save chords to your library with a custom name.
     *   **Sequencer Tab**:
-        *   **Add Tracks**: Create separate tracks for different parts (Bass, Lead, Pad).
-        *   **Add Blocks**: Click on the timeline to add a pattern block.
-        *   **Edit Blocks**: Assign a saved chord to a block or edit its notes directly on the lattice.
-        *   **Play**: Press Play to hear your microtonal composition.
+        *   **Add Tracks**: Create melodic tracks for harmony or **Rhythm Tracks** for drums.
+        *   **Arrangement**: Click on the timeline to add blocks. Rhythm blocks reference patterns.
+        *   **Swing**: Adjust the Swing slider to add groove to your beat.
+    *   **Pattern Tab**:
+        *   Create and edit 16-step rhythm patterns for your drum tracks.
 
 ## Project Structure
 
--   `index.html`: The main user interface with tabbed views for Synthesizer, Chord Editor, and Sequencer.
--   `src/js/`: Modular JavaScript source code for UI handling, event management, and application initialization.
--   `src/synthesizer.rb`: Core synthesis logic (Voice allocation, AudioNode graph, Presets).
--   `src/sequencer.rb`: Logic for the Multi-track Sequencer, Tracks, Blocks, and Note Coordinates.
+-   `index.html`: The main user interface with tabbed views.
+-   `src/js/`: Modular JavaScript source code for UI and initialization.
+-   `src/synthesizer/`:
+    -   `synthesizer.rb`: Core subtractive synthesis engine.
+    -   `drum_machine.rb`: Dedicated engine for drum sounds.
+    -   `voice.rb`: Polyphonic voice allocation logic.
+-   `src/sequencer.rb`: Logic for the Multi-track Sequencer, Rhythm Patterns, and Playback Scheduler.
 -   `doc/TUNING.md`: Detailed explanation of the Just Intonation tuning system.
 -   `Rakefile`: Development tasks.
 

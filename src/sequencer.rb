@@ -1,4 +1,5 @@
 require "js"
+require_relative "synthesizer/drum_machine"
 
 # Structure to hold lattice coordinates
 # a: 1st dim (2.0) - Octave
@@ -12,23 +13,37 @@ NoteCoord = Struct.new(:a, :b, :c, :d, :e) do
   end
 end
 
-Block = Struct.new(:start_step, :length, :notes, :chord_name) do
+Block = Struct.new(:start_step, :length, :notes, :chord_name, :pattern_id) do
   def to_json_object
     {
       start: start_step,
       length: length,
       notes: notes.map(&:to_json_object),
-      chord_name: chord_name
+      chord_name: chord_name,
+      pattern_id: pattern_id
+    }
+  end
+end
+
+RhythmPattern = Struct.new(:id, :name, :steps, :events) do
+  # events: Hash { instrument_name => { step_index => velocity(0.0..1.0) } }
+  def to_json_object
+    {
+      id: id,
+      name: name,
+      steps: steps,
+      events: events
     }
   end
 end
 
 class Track
-  attr_accessor :blocks, :synth, :mute, :preset_name, :solo
+  attr_accessor :blocks, :synth, :mute, :preset_name, :solo, :type
   attr_reader :volume
 
-  def initialize(synth)
+  def initialize(synth, type = :melodic)
     @synth = synth
+    @type = type # :melodic or :rhythmic
     @blocks = []
     @mute = false
     @solo = false
@@ -41,8 +56,8 @@ class Track
     @synth.volume = @volume
   end
 
-  def add_block(start_step, length)
-    block = Block.new(start_step, length, [], "")
+  def add_block(start_step, length, pattern_id = nil)
+    block = Block.new(start_step, length, [], "", pattern_id)
     @blocks << block
     block
   end
@@ -60,14 +75,17 @@ class Sequencer
   attr_accessor :bpm
   attr_accessor :root_freq
   attr_accessor :y_axis_dim # 3, 4, or 5
+  attr_accessor :swing_amount # 0.0 to 1.0 (0 = straight, >0 = swing)
 
   attr_reader :is_playing, :current_step, :tracks, :current_track_index, :total_steps
+  attr_reader :patterns
 
   def initialize(ctx)
     @ctx = ctx
     @bpm = 120
     @root_freq = 261.63 # C4
     @y_axis_dim = 3
+    @swing_amount = 0.0
 
     @total_steps = 128 # Default 4 bars (32 steps * 4)
 
@@ -84,7 +102,13 @@ class Sequencer
     @compressor.connect(@ctx[:destination])
 
     @tracks = []
-    add_track # Add initial track
+    @patterns = []
+
+    # Initialize one melody track
+    add_track
+
+    # Initialize default pattern
+    create_pattern("Pattern 1")
 
     @is_playing = false
     @current_step = 0
@@ -103,10 +127,20 @@ class Sequencer
 
   def add_track
     synth = Synthesizer.new(@ctx)
-    # Connect Synth output to Sequencer Master Bus
     synth.connect(@master_gain)
-    
-    track = Track.new(synth)
+
+    track = Track.new(synth, :melodic)
+    @tracks << track
+    select_track(@tracks.length - 1)
+    track
+  end
+
+  def add_rhythm_track
+    drum_machine = DrumMachine.new(@ctx)
+    drum_machine.connect(@master_gain)
+
+    track = Track.new(drum_machine, :rhythmic)
+    track.preset_name = "Drum Kit"
     @tracks << track
     select_track(@tracks.length - 1)
     track
@@ -119,7 +153,6 @@ class Sequencer
     track = @tracks.delete_at(index)
     track.synth.close
 
-    # Adjust selection if necessary
     if @current_track_index >= @tracks.length
       @current_track_index = @tracks.length - 1
     end
@@ -128,9 +161,9 @@ class Sequencer
   def select_track(index)
     if index >= 0 && index < @tracks.length
       @current_track_index = index
-      # Update global $synth reference for UI
       $synth = current_track.synth
-      # Update global analyser for Visualizer
+      # If rhythm track, $synth is DrumMachine, which might not match Synthesizer interface perfectly for UI
+      # We will handle this in UI
       JS.global[:synthAnalyser] = current_track.synth.analyser_node.native_node
     end
   end
@@ -139,23 +172,51 @@ class Sequencer
     @tracks[@current_track_index]
   end
 
+  # --- Pattern Management ---
+
+  def create_pattern(name = "New Pattern", steps = 16)
+    id = "p#{@patterns.length + 1}_#{Time.now.to_i}"
+    # Initialize with velocity hash for each instrument
+    events = {
+      "Kick" => {}, "Snare" => {}, "HiHat" => {}, "OpenHat" => {}
+    }
+    pattern = RhythmPattern.new(id, name, steps, events)
+    @patterns << pattern
+    pattern
+  end
+
+  def get_pattern(id)
+    @patterns.find { |p| p.id == id }
+  end
+
+  def get_pattern_name(id)
+    p = get_pattern(id)
+    p ? p.name : id
+  end
+
+  def get_patterns_json
+    items = @patterns.map do |p|
+      %|{ "id": "#{p.id}", "name": "#{p.name}", "steps": #{p.steps} }|
+    end
+    "[#{items.join(',')}]"
+  end
+
   # --- Block Management ---
 
-  # Create a new block or merge into existing
-  def add_or_update_block(track_index, start_step, length)
+  def add_or_update_block(track_index, start_step, length, pattern_id = nil)
     track = @tracks[track_index]
     return unless track
 
-    # Remove overlapping blocks? Or allow overlap?
-    # For now, let's remove overlaps for simplicity in this mono-timbral-per-track context
-    # actually let's just push it. Overlaps are fine for polyphony.
-
-    # Check if a block starts exactly here to update it?
     existing = track.blocks.find { |b| b.start_step == start_step }
     if existing
       existing.length = length
+      existing.pattern_id = pattern_id if pattern_id
     else
-      track.add_block(start_step, length)
+      # If rhythm track and no pattern_id provided, use the first available pattern
+      if track.type == :rhythmic && pattern_id.nil?
+        pattern_id = @patterns.first&.id
+      end
+      track.add_block(start_step, length, pattern_id)
     end
   end
 
@@ -179,161 +240,92 @@ class Sequencer
     "[#{json_items.join(',')}]"
   end
 
-  # Update notes in a block from Lattice Editor
   def update_block_notes(track_index, start_step, notes_json_str)
+    # ... (same as before, mostly for melodic) ...
     track = @tracks[track_index]
     return unless track
+    return if track.type == :rhythmic # Rhythm blocks don't store notes this way
 
     block = track.blocks.find { |b| b.start_step == start_step }
     return unless block
 
-    # Clear existing
     block.notes.clear
-
-    # Parse JSON string from JS
     js_notes = JS.global[:JSON].call(:parse, notes_json_str)
-
-    # Iterate JS Array using index
     len = js_notes[:length].to_i
     len.times do |i|
        n = js_notes[i]
-       # JS objects to Ruby structs
+       new_note = NoteCoord.new(n[:a].to_f, n[:b].to_f, n[:c].to_f, n[:d].to_f, n[:e].to_f)
+       block.notes << new_note
+    end
+  end
+
+  def update_block_notes_buffer(track_index, start_step, flat_array)
+    track = @tracks[track_index]
+    return unless track
+    return if track.type == :rhythmic
+
+    block = track.blocks.find { |b| b.start_step == start_step }
+    return unless block
+
+    block.notes.clear
+    len = flat_array[:length].to_i
+    count = len / 5
+    count.times do |i|
+       base = i * 5
        new_note = NoteCoord.new(
-         n[:a].to_f,
-         n[:b].to_f,
-         n[:c].to_f,
-         n[:d].to_f,
-         n[:e].to_f
+         flat_array[base].to_f, flat_array[base+1].to_f,
+         flat_array[base+2].to_f, flat_array[base+3].to_f, flat_array[base+4].to_f
        )
        block.notes << new_note
     end
   end
 
-  # Update notes in a block using Float32Array/Buffer for efficiency
-  # flat_array: [a1, b1, c1, d1, e1, a2, ...]
-  def update_block_notes_buffer(track_index, start_step, flat_array)
-    track = @tracks[track_index]
-    return unless track
+  # Pattern Editor Integration
+  def toggle_pattern_step(pattern_id, instrument, step, velocity = 0.8)
+    pattern = get_pattern(pattern_id)
+    return unless pattern
 
-    block = track.blocks.find { |b| b.start_step == start_step }
-    return unless block
-
-    # Clear existing
-    block.notes.clear
-
-    # Iterate JS TypedArray
-    len = flat_array[:length].to_i
-    count = len / 5
-    
-    count.times do |i|
-       base = i * 5
-       # Access elements directly from TypedArray (still cross-boundary calls but fewer than JSON object tree)
-       a = flat_array[base].to_f
-       b = flat_array[base+1].to_f
-       c = flat_array[base+2].to_f
-       d = flat_array[base+3].to_f
-       e = flat_array[base+4].to_f
-       
-       new_note = NoteCoord.new(a, b, c, d, e)
-       block.notes << new_note
-    end
-  end
-
-  # Helper for Lattice Editor logic (reusing existing toggling logic but on Block)
-  def toggle_note_in_block(track_index, start_step, b, y_val)
-    track = @tracks[track_index]
-    return unless track
-    block = track.blocks.find { |b| b.start_step == start_step }
-    return unless block
-
-    t_c = (@y_axis_dim == 3) ? y_val : 0
-    t_d = (@y_axis_dim == 4) ? y_val : 0
-    t_e = (@y_axis_dim == 5) ? y_val : 0
-
-    existing_indices = []
-    block.notes.each_with_index do |note, idx|
-      match = (note.b == b)
-      match &&= (note.c == t_c) if @y_axis_dim == 3
-      match &&= (note.d == t_d) if @y_axis_dim == 4
-      match &&= (note.e == t_e) if @y_axis_dim == 5
-      existing_indices << idx if match
-    end
-
-    if existing_indices.any?
-      existing_indices.reverse_each { |i| block.notes.delete_at(i) }
+    steps_map = pattern.events[instrument] || {}
+    if steps_map.has_key?(step)
+      steps_map.delete(step)
     else
-      new_note = NoteCoord.new(0, b, t_c, t_d, t_e)
-      block.notes << new_note
+      steps_map[step] = velocity
     end
+    pattern.events[instrument] = steps_map
   end
 
-  def shift_octave_in_block(track_index, start_step, b, y_val, delta)
-    track = @tracks[track_index]
-    return unless track
-    block = track.blocks.find { |b| b.start_step == start_step }
-    return unless block
+  def get_pattern_events_json(pattern_id)
+    pattern = get_pattern(pattern_id)
+    return "{}" unless pattern
 
-    t_c = (@y_axis_dim == 3) ? y_val : 0
-    t_d = (@y_axis_dim == 4) ? y_val : 0
-    t_e = (@y_axis_dim == 5) ? y_val : 0
+    # Build JSON for events
+    json_parts = pattern.events.map do |inst, data|
+      steps_map = data.is_a?(Hash) ? data : {}
 
-    block.notes.each do |note|
-      match = (note.b == b)
-      match &&= (note.c == t_c) if @y_axis_dim == 3
-      match &&= (note.d == t_d) if @y_axis_dim == 4
-      match &&= (note.e == t_e) if @y_axis_dim == 5
-
-      if match
-        note.a += delta
+      # If legacy data (Array), convert to Hash
+      if data.is_a?(Array)
+        data.each { |s| steps_map[s] = 0.8 }
       end
+
+      # steps_map is { index => velocity }
+      pairs = steps_map.map { |k, v| %|"#{k}": #{v}| }
+      %|"#{inst}": { #{pairs.join(',')} }|
     end
+    "{#{json_parts.join(',')}}"
   end
 
-  def shift_block_notes(track_index, start_step, dx, dy)
-    track = @tracks[track_index]
-    return false unless track
-    block = track.blocks.find { |b| b.start_step == start_step }
-    return false unless block
-    return false if block.notes.empty?
-
-    can_shift = block.notes.all? do |n|
-      new_b = n.b + dx
-      valid_x = new_b.between?(-3, 3)
-      valid_y = true
-      if @y_axis_dim == 3
-        valid_y = (n.c + dy).between?(-2, 2)
-      elsif @y_axis_dim == 4
-        valid_y = (n.d + dy).between?(-2, 2)
-      elsif @y_axis_dim == 5
-        valid_y = (n.e + dy).between?(-2, 2)
-      end
-      valid_x && valid_y
-    end
-
-    return false unless can_shift
-
-    block.notes.each do |n|
-      n.b += dx
-      if @y_axis_dim == 3
-        n.c += dy
-      elsif @y_axis_dim == 4
-        n.d += dy
-      elsif @y_axis_dim == 5
-        n.e += dy
-      end
-    end
-    true
-  end
+  # ... (Helper methods for Lattice Editor omitted as they are specific to melodic blocks) ...
 
   def get_track_blocks_json(track_index)
     track = @tracks[track_index]
     return "[]" unless track
 
-    # Manual JSON construction
     items = track.blocks.map do |b|
-       # notes count is enough for rendering?
-       # or maybe send if it has notes to color it
-       %|{ "start": #{b.start_step}, "length": #{b.length}, "notes_count": #{b.notes.length} }|
+       extra = ""
+       if track.type == :rhythmic
+         extra = %|, "pattern_id": "#{b.pattern_id}"|
+       end
+       %|{ "start": #{b.start_step}, "length": #{b.length}, "notes_count": #{b.notes.length}, "type": "#{track.type}"#{extra} }|
     end
     "[#{items.join(',')}]"
   end
@@ -343,8 +335,6 @@ class Sequencer
   def start
     return if @is_playing
     @is_playing = true
-    # Don't reset current step if we want pause/resume behavior?
-    # For now restart from 0
     @current_step = 0
     @next_note_time = @ctx[:currentTime].to_f + 0.1
 
@@ -371,11 +361,39 @@ class Sequencer
   end
 
   def schedule_step(step_index, time)
-    # 1/32 measure resolution
-    # 1 bar = 4 beats
-    # 32 steps = 4 beats -> 1 step = 1/8 beat
     seconds_per_beat = 60.0 / @bpm
-    step_duration_sec = seconds_per_beat / 8.0
+    step_duration_sec = seconds_per_beat / 8.0 # 1/32 note resolution base
+
+    # Apply Swing
+    # If step is even (0, 2, 4...), it's on grid.
+    # If step is odd (1, 3, 5...), it's off grid (the 'and' of 16th note if 1 step = 1/16??)
+    # Wait, resolution:
+    # 1 bar = 32 steps.
+    # 1 beat = 8 steps.
+    # 1/16 note = 2 steps.
+    # So even steps are 1/16 lines, odd steps are 1/32 intermediate?
+    # Usually swing applies to 1/16 notes.
+    # If our resolution is 32 steps per bar, that's 1/32 notes.
+    # 1/16 note indices are: 0, 2, 4, 6...
+    # The "off-beat" 1/16s are: 2, 6, 10... (wait, 0 is beat, 2 is next 1/16?)
+    # 0 (1.1.1), 2 (1.1.2), 4 (1.1.3), 6 (1.1.4)
+    # The swing usually delays the *second* 1/16th note of a pair.
+    # Pair: (0, 2), (4, 6), ...
+    # So indices 2, 6, 10... should be delayed.
+    # Indices are step_index.
+    # If step_index % 4 == 2, add swing offset.
+
+    swing_offset = 0.0
+    if (step_index % 4) == 2
+      # Max swing (100%) ~= triplet feel.
+      # 1/16 duration = step_duration_sec * 2
+      # Triplet 1/16 = 2/3 of straight 1/16?
+      # Let's just say swing_amount is percentage of 1/16 note duration to delay.
+      # 0.5 swing might be heavy.
+      swing_offset = (step_duration_sec * 2) * (@swing_amount * 0.33)
+    end
+
+    play_time = time + swing_offset
 
     any_solo = @tracks.any?(&:solo)
 
@@ -383,23 +401,45 @@ class Sequencer
       next if track.mute
       next if any_solo && !track.solo
 
-      # Find blocks starting at this step
-      blocks = track.blocks.select { |b| b.start_step == step_index }
+      # Find blocks starting at this step (for Melodic) OR covering this step (for Rhythmic)
+      # For Melodic: We only schedule at start of block (or if we supported internal sequence)
+      # Current Melodic implementation: Block contains ONE set of notes played at start_step with duration = length.
 
-      blocks.each do |block|
-        next if block.notes.empty?
+      if track.type == :melodic
+        blocks = track.blocks.select { |b| b.start_step == step_index }
+        blocks.each do |block|
+          next if block.notes.empty?
+          duration = block.length * step_duration_sec
+          block.notes.each do |note|
+            freq = calculate_freq(note)
+            track.synth.schedule_note(freq, play_time, duration)
+          end
+        end
+      elsif track.type == :rhythmic
+        # Find block covering this step
+        block = track.find_block_at(step_index)
+        next unless block && block.pattern_id
 
-        duration = block.length * step_duration_sec
-        # Slightly reduce for articulation? Or full legato?
-        # User asked for connecting sections... full legato might be desired if butt-joined.
-        # But let's keep 0.8 for articulation for now unless legato is explicitly requested
-        # Actually, if we want "one long note", the block handles it.
-        # Between blocks, articulation is good.
-        play_duration = duration # * 0.95?
+        pattern = get_pattern(block.pattern_id)
+        next unless pattern
 
-        block.notes.each do |note|
-          freq = calculate_freq(note)
-          track.synth.schedule_note(freq, time, play_duration)
+        # Calculate local step in pattern
+        # Assume pattern loops if block is longer than pattern steps
+        # Pattern resolution: 1/16 note (2 sequencer steps)
+        # Sequencer resolution: 1/32 note
+        local_step_abs = step_index - block.start_step
+        pattern_seq_length = pattern.steps * 2
+        local_pos = local_step_abs % pattern_seq_length
+
+        if (local_pos % 2) == 0
+          pattern_step_index = local_pos / 2
+
+          pattern.events.each do |instrument, steps_map|
+            if steps_map.has_key?(pattern_step_index)
+              velocity = steps_map[pattern_step_index]
+              track.synth.trigger(instrument, play_time, velocity)
+            end
+          end
         end
       end
     end

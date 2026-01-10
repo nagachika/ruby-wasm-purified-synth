@@ -2,8 +2,10 @@ import { CELL_WIDTH, drawTetrisShape } from "./utils.js";
 import { getChords } from "./chord_manager.js";
 import { getPresets } from "./presets.js";
 
-// Global callback for Playhead
+// Global callback for Playhead (Same as before)
 window.updatePlayhead = (stepIndex) => {
+  // ... (Same implementation, can keep reference if not overwritten)
+  // To avoid duplication if I rewrite the whole file, I include it.
   try {
       const idx = Number(stepIndex);
       const container = document.getElementById("sequencer-rows");
@@ -45,17 +47,24 @@ export function setupSequencer(vm) {
   const rowsContainer = document.getElementById("sequencer-rows");
   const playBtn = document.getElementById("seq-play-btn");
   const addTrackBtn = document.getElementById("add_track_btn");
+  const addRhythmTrackBtn = document.getElementById("add_rhythm_track_btn");
   const bpmInput = document.getElementById("bpm");
   const bpmDisplay = document.getElementById("val_bpm");
   const measuresInput = document.getElementById("measures");
   const measuresDisplay = document.getElementById("val_measures");
   const rootFreqInput = document.getElementById("root_freq");
   const yAxisSelect = document.getElementById("y_axis_dim");
+  const swingInput = document.getElementById("swing_amount");
 
-  // Chord Selector Modal
+  // Chord Selector Modal (Melodic)
   const selectorModal = document.getElementById("chord-selector-modal");
   const selectorClose = document.getElementById("close-chord-selector");
   const selectorList = document.getElementById("selector-list");
+
+  // Pattern Selector Modal (Rhythmic)
+  const patternModal = document.getElementById("pattern-selector-modal"); // Need to add to HTML
+  const patternClose = document.getElementById("close-pattern-selector"); // Need to add to HTML
+  const patternList = document.getElementById("pattern-selector-list"); // Need to add to HTML
 
   let isDrawing = false;
   let drawStartStep = 0;
@@ -77,7 +86,6 @@ export function setupSequencer(vm) {
     const scrollContainer = document.getElementById("master-scroll-container") || document.createElement("div");
     if (!scrollContainer.id) {
         scrollContainer.id = "master-scroll-container";
-        // ... (styles) ...
         scrollContainer.style.overflowX = "scroll";
         scrollContainer.style.overflowY = "hidden";
         scrollContainer.style.marginTop = "10px";
@@ -87,7 +95,6 @@ export function setupSequencer(vm) {
         scrollContainer.style.height = "15px";
     }
 
-    // Clear and rebuild scroll spacer
     scrollContainer.innerHTML = "";
     const scrollSpacer = document.createElement("div");
     scrollSpacer.style.width = `${totalSteps * CELL_WIDTH}px`;
@@ -111,6 +118,10 @@ export function setupSequencer(vm) {
         row.style.height = "80px";
         row.style.flexShrink = "0";
 
+        // Check Track Type
+        let trackType = "melodic";
+        try { trackType = vm.eval(`$sequencer.tracks[${t}].type`).toString(); } catch(e){}
+
         // Track Controls
         const controlDiv = document.createElement("div");
         controlDiv.style.display = "flex";
@@ -124,7 +135,7 @@ export function setupSequencer(vm) {
         controlDiv.style.gap = "5px";
 
         const labelBtn = document.createElement("button");
-        labelBtn.textContent = `Track ${t + 1}`;
+        labelBtn.textContent = (trackType === "rhythmic" ? "🥁 " : "🎹 ") + `Track ${t + 1}`;
         labelBtn.style.padding = "4px";
         labelBtn.style.fontSize = "0.8rem";
         labelBtn.style.border = "1px solid #555";
@@ -138,29 +149,35 @@ export function setupSequencer(vm) {
         }
         labelBtn.onclick = () => selectTrack(t);
 
+        // Preset Selector (Only for Melodic for now? Or Drum Kit selection?)
         const presetSel = document.createElement("select");
         presetSel.style.fontSize = "0.8rem";
         presetSel.style.padding = "2px";
         presetSel.style.width = "100%";
-        const presets = getPresets();
-        presetSel.innerHTML = '<option value="">(Default)</option>';
-        Object.keys(presets).forEach(name => {
-            const opt = document.createElement("option");
-            opt.value = name;
-            opt.textContent = name;
-            presetSel.appendChild(opt);
-        });
-        try {
-            presetSel.value = vm.eval(`$sequencer.tracks[${t}].preset_name`).toString();
-        } catch(e) {}
-        presetSel.onchange = (e) => {
-            const name = e.target.value;
-            if (name && presets[name]) {
-                window._tempTrackPresetJson = presets[name];
-                vm.eval(`$sequencer.tracks[${t}].synth.import_settings(JS.global[:_tempTrackPresetJson])`);
-                vm.eval(`$sequencer.tracks[${t}].preset_name = "${name}"`);
-            }
-        };
+        if (trackType === "melodic") {
+            const presets = getPresets();
+            presetSel.innerHTML = '<option value="">(Default)</option>';
+            Object.keys(presets).forEach(name => {
+                const opt = document.createElement("option");
+                opt.value = name;
+                opt.textContent = name;
+                presetSel.appendChild(opt);
+            });
+            try {
+                presetSel.value = vm.eval(`$sequencer.tracks[${t}].preset_name`).toString();
+            } catch(e) {}
+            presetSel.onchange = (e) => {
+                const name = e.target.value;
+                if (name && presets[name]) {
+                    window._tempTrackPresetJson = presets[name];
+                    vm.eval(`$sequencer.tracks[${t}].synth.import_settings(JS.global[:_tempTrackPresetJson])`);
+                    vm.eval(`$sequencer.tracks[${t}].preset_name = "${name}"`);
+                }
+            };
+        } else {
+            presetSel.disabled = true;
+            presetSel.innerHTML = '<option>Drum Kit</option>';
+        }
 
         const removeBtn = document.createElement("button");
         removeBtn.innerHTML = '<span class="material-icons" style="font-size: 1.2rem;">delete</span>';
@@ -297,7 +314,14 @@ export function setupSequencer(vm) {
                 blockDiv.style.left = `${b.start * CELL_WIDTH}px`;
                 blockDiv.style.width = `${b.length * CELL_WIDTH}px`;
                 blockDiv.style.height = "100%";
-                blockDiv.style.background = b.notes_count > 0 ? "#4dabf7" : "#555";
+
+                // Color separation
+                if (trackType === "rhythmic") {
+                    blockDiv.style.background = "#ff8787"; // Reddish for drums
+                } else {
+                    blockDiv.style.background = b.notes_count > 0 ? "#4dabf7" : "#555";
+                }
+
                 blockDiv.style.border = "1px solid #fff";
                 blockDiv.style.borderRadius = "4px";
                 blockDiv.style.cursor = "pointer";
@@ -305,28 +329,46 @@ export function setupSequencer(vm) {
                 blockDiv.style.display = "flex";
                 blockDiv.style.alignItems = "center";
                 blockDiv.style.justifyContent = "center";
-                blockDiv.title = b.chord_name || `Start: ${b.start}`;
+                blockDiv.style.overflow = "hidden";
 
-                // Render Tetris Shape inside Block
-                const canvas = document.createElement("canvas");
-                const cw = b.length * CELL_WIDTH - 4;
-                const ch = 70; // Reduced height to ensure fit
-                canvas.width = cw > 0 ? cw : 1;
-                canvas.height = ch;
-                canvas.style.display = "block"; // Prevent inline spacing issues
+                if (trackType === "melodic") {
+                    blockDiv.title = b.chord_name || `Start: ${b.start}`;
+                    const canvas = document.createElement("canvas");
+                    const cw = b.length * CELL_WIDTH - 4;
+                    const ch = 70;
+                    canvas.width = cw > 0 ? cw : 1;
+                    canvas.height = ch;
+                    canvas.style.display = "block";
+                    try {
+                        const notesJson = vm.eval(`$sequencer.get_block_notes_json(${t}, ${b.start})`).toString();
+                        const notes = JSON.parse(notesJson);
+                        drawTetrisShape(canvas.getContext("2d"), notes, cw, ch);
+                    } catch(e){}
+                    blockDiv.appendChild(canvas);
 
-                try {
-                    const notesJson = vm.eval(`$sequencer.get_block_notes_json(${t}, ${b.start})`).toString();
-                    const notes = JSON.parse(notesJson);
-                    drawTetrisShape(canvas.getContext("2d"), notes, cw, ch);
-                } catch(e){}
+                    blockDiv.onclick = (e) => {
+                        e.stopPropagation();
+                        openChordSelector(t, b.start);
+                    };
 
-                blockDiv.appendChild(canvas);
+                } else if (trackType === "rhythmic") {
+                     // Get pattern name
+                     let pName = b.pattern_id;
+                     try {
+                         pName = vm.eval(`$sequencer.get_pattern_name("${b.pattern_id}")`).toString();
+                     } catch(e) {}
 
-                blockDiv.onclick = (e) => {
-                    e.stopPropagation();
-                    openChordSelector(t, b.start);
-                };
+                     blockDiv.innerText = pName;
+                     blockDiv.style.color = "black";
+                     blockDiv.style.fontSize = "0.8rem";
+                     blockDiv.style.fontWeight = "bold";
+
+                     blockDiv.onclick = (e) => {
+                        e.stopPropagation();
+                        openPatternSelector(t, b.start, b.pattern_id);
+                    };
+                }
+
                 blockDiv.oncontextmenu = (e) => {
                     e.preventDefault();
                     if(confirm("Delete block?")) {
@@ -357,14 +399,6 @@ export function setupSequencer(vm) {
   function selectTrack(t) {
       vm.eval(`$sequencer.select_track(${t})`);
       renderSequencer();
-      // Also update synth UI to reflect this track's settings?
-      // Actually, $synth is updated in Ruby side to point to current track synth.
-      // So we might need to refresh UI knobs.
-      // But currently setupUI binds events, it doesn't auto-refresh from $synth on track change except
-      // if we explicitly call something.
-      // Ideally we should re-read values.
-      // Let's trigger a UI refresh if possible.
-      // For now, at least render sequencer to show selected track.
   }
 
   function removeTrack(t) {
@@ -374,6 +408,7 @@ export function setupSequencer(vm) {
       }
   }
 
+  // --- MELODIC CHORD SELECTOR ---
   function openChordSelector(trackIdx, startStep) {
       selectorList.innerHTML = "";
       const chords = getChords();
@@ -383,7 +418,6 @@ export function setupSequencer(vm) {
           selectorModal.style.display = "flex";
           return;
       }
-
       // Add existing chords
       chordNames.forEach(name => {
           const entry = chords[name];
@@ -417,25 +451,19 @@ export function setupSequencer(vm) {
 
           selectorList.appendChild(item);
       });
-
       selectorModal.style.display = "flex";
   }
-
   selectorClose.onclick = () => selectorModal.style.display = "none";
 
   function applyChordToBlock(t, s, name, notes) {
       const len = notes.length;
       const totalFloats = len * 5;
-      
-      // Optimization: Use SharedArrayBuffer if available, otherwise standard ArrayBuffer
-      // This allows efficient numeric transfer.
       let buffer;
       if (window.crossOriginIsolated && window.SharedArrayBuffer) {
           buffer = new SharedArrayBuffer(totalFloats * 4);
       } else {
           buffer = new ArrayBuffer(totalFloats * 4);
       }
-      
       const floatView = new Float32Array(buffer);
       for(let i = 0; i < len; i++) {
           floatView[i * 5 + 0] = notes[i].a;
@@ -444,20 +472,85 @@ export function setupSequencer(vm) {
           floatView[i * 5 + 3] = notes[i].d;
           floatView[i * 5 + 4] = notes[i].e;
       }
-
       window._tempChordBuffer = floatView;
-
       vm.eval(`$sequencer.update_block_notes_buffer(${t}, ${s}, JS.global[:_tempChordBuffer])`);
       vm.eval(`
         t = $sequencer.tracks[${t}]
         b = t.blocks.find { |blk| blk.start_step == ${s} }
         b.chord_name = "${name}" if b
       `);
-
       renderSequencer();
   }
 
-  // ... (Other handlers like window.mouseup for drawing blocks) ...
+  // --- RHYTHMIC PATTERN SELECTOR ---
+  function openPatternSelector(trackIdx, startStep, currentPatternId) {
+    if(!patternModal) return; // Guard if not in HTML yet
+    patternList.innerHTML = "";
+
+    // Fetch patterns
+    let patterns = [];
+    try {
+        const json = vm.eval(`$sequencer.get_patterns_json`).toString();
+        patterns = JSON.parse(json);
+    } catch(e) {}
+
+    patterns.forEach(p => {
+        const item = document.createElement("div");
+        item.style.background = (p.id === currentPatternId) ? "#007bff" : "#444";
+        item.style.padding = "10px";
+        item.style.borderRadius = "4px";
+        item.style.cursor = "pointer";
+        item.style.marginBottom = "5px";
+        item.style.color = "white";
+        item.textContent = p.name;
+
+        item.onclick = () => {
+             // Assign pattern to block
+             // We only want to update the pattern_id, preserving the length.
+             vm.eval(`
+                t = $sequencer.tracks[${trackIdx}]
+                b = t.blocks.find { |blk| blk.start_step == ${startStep} }
+                b.pattern_id = "${p.id}" if b
+             `);
+             patternModal.style.display = "none";
+             renderSequencer();
+
+             // Select this pattern in editor (so if we go there later, it's selected)
+             const patSelect = document.getElementById("pattern-select");
+             if(patSelect) {
+                 patSelect.value = p.id;
+                 patSelect.dispatchEvent(new Event("change"));
+             }
+        };
+
+        const editBtn = document.createElement("button");
+        editBtn.textContent = "Edit";
+        editBtn.style.float = "right";
+        editBtn.style.fontSize = "0.7rem";
+        editBtn.onclick = (e) => {
+            e.stopPropagation();
+            patternModal.style.display = "none";
+             const tabPattern = document.getElementById("tab-pattern");
+             if(tabPattern) tabPattern.click();
+             const patSelect = document.getElementById("pattern-select");
+             if(patSelect) {
+                 patSelect.value = p.id;
+                 patSelect.dispatchEvent(new Event("change"));
+             }
+        };
+        item.appendChild(editBtn);
+
+        patternList.appendChild(item);
+    });
+
+    patternModal.style.display = "flex";
+  }
+
+  if(patternClose) patternClose.onclick = () => patternModal.style.display = "none";
+
+
+  // --- Event Listeners ---
+
   window.addEventListener("mouseup", () => {
     if (isDrawing && ghostBlock) {
         const left = parseInt(ghostBlock.style.left);
@@ -465,9 +558,25 @@ export function setupSequencer(vm) {
         const start = Math.round(left / CELL_WIDTH);
         const len = Math.round(width / CELL_WIDTH);
         try {
-            vm.eval(`$sequencer.add_or_update_block(${drawTrackIndex}, ${start}, ${len})`);
+            // Check type of track
+            const trackType = vm.eval(`$sequencer.tracks[${drawTrackIndex}].type`).toString();
+
+            // Default length for rhythm blocks if it's just a click
+            let finalLen = len;
+            if (trackType === "rhythmic" && len <= 1) {
+                finalLen = 32; // 1 bar (16 steps of 1/16th notes)
+            }
+
+            // Add block
+            vm.eval(`$sequencer.add_or_update_block(${drawTrackIndex}, ${start}, ${finalLen})`);
             renderSequencer();
-            openChordSelector(drawTrackIndex, start);
+
+            if (trackType === "melodic") {
+                openChordSelector(drawTrackIndex, start);
+            } else {
+                const pid = vm.eval(`$sequencer.tracks[${drawTrackIndex}].blocks.find { |b| b.start_step == ${start} }.pattern_id`).toString();
+                openPatternSelector(drawTrackIndex, start, pid);
+            }
         } catch(e){ console.error(e); }
         ghostBlock = null;
     }
@@ -481,6 +590,16 @@ export function setupSequencer(vm) {
           renderSequencer();
       } catch(e) { console.error(e); }
   };
+
+  if (addRhythmTrackBtn) {
+      addRhythmTrackBtn.onclick = () => {
+          try {
+              vm.eval("$sequencer.add_rhythm_track");
+              renderSequencer();
+          } catch(e) { console.error(e); }
+      };
+  }
+
   playBtn.onclick = () => {
     try {
       const isPlaying = vm.eval("$sequencer.is_playing").toString() === "true";
@@ -505,6 +624,16 @@ export function setupSequencer(vm) {
   });
   rootFreqInput.addEventListener("change", () => { try{vm.eval(`$sequencer.root_freq = ${rootFreqInput.value}`);}catch(e){} });
   yAxisSelect.addEventListener("change", () => { try{vm.eval(`$sequencer.y_axis_dim = ${yAxisSelect.value}`);}catch(e){} });
+
+  if (swingInput) {
+      swingInput.addEventListener("input", () => {
+          try{
+              vm.eval(`$sequencer.swing_amount = ${swingInput.value}`);
+              const display = document.getElementById("val_swing");
+              if (display) display.textContent = Math.round(swingInput.value * 100);
+          }catch(e){}
+      });
+  }
 
   window.addEventListener("trackChanged", renderSequencer);
   renderSequencer();
