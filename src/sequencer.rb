@@ -13,6 +13,21 @@ NoteCoord = Struct.new(:a, :b, :c, :d, :e) do
   end
 end
 
+class Arpeggiator
+  attr_accessor :enabled, :mode, :division, :octaves
+
+  def initialize
+    @enabled = false
+    @mode = :up
+    @division = 1 # 1 step = 1/32 note
+    @octaves = 1
+  end
+
+  def to_json_object
+    { enabled: @enabled, mode: @mode, division: @division, octaves: @octaves }
+  end
+end
+
 Block = Struct.new(:start_step, :length, :notes, :chord_name, :pattern_id) do
   def to_json_object
     {
@@ -39,7 +54,7 @@ end
 
 class Track
   attr_accessor :blocks, :synth, :mute, :preset_name, :solo, :type
-  attr_reader :volume
+  attr_reader :volume, :arpeggiator
 
   def initialize(synth, type = :melodic)
     @synth = synth
@@ -49,6 +64,7 @@ class Track
     @solo = false
     @preset_name = ""
     @volume = 1.0
+    @arpeggiator = Arpeggiator.new
   end
 
   def volume=(val)
@@ -399,18 +415,32 @@ class Sequencer
       next if track.mute
       next if any_solo && !track.solo
 
-      # Find blocks starting at this step (for Melodic) OR covering this step (for Rhythmic)
-      # For Melodic: We only schedule at start of block (or if we supported internal sequence)
-      # Current Melodic implementation: Block contains ONE set of notes played at start_step with duration = length.
-
       if track.type == :melodic
+        # If Arp is ON, we might need to schedule notes even if step_index is not block.start_step
+        # but for this "shift start" implementation, we can schedule all notes of the block
+        # at the block.start_step, just with different start times and durations.
         blocks = track.blocks.select { |b| b.start_step == step_index }
         blocks.each do |block|
           next if block.notes.empty?
-          duration = block.length * step_duration_sec
-          block.notes.each do |note|
-            freq = calculate_freq(note)
-            track.synth.schedule_note(freq, play_time, duration)
+
+          if track.arpeggiator.enabled
+            block.notes.each_with_index do |note, idx|
+              delay_steps = idx * track.arpeggiator.division
+              # If the delay exceeds the block length, we could either clip it or let it play.
+              # Let's clip it to block length for now.
+              next if delay_steps >= block.length
+
+              note_start_time = play_time + (delay_steps * step_duration_sec)
+              note_duration = (block.length - delay_steps) * step_duration_sec
+              freq = calculate_freq(note)
+              track.synth.schedule_note(freq, note_start_time, note_duration)
+            end
+          else
+            duration = block.length * step_duration_sec
+            block.notes.each do |note|
+              freq = calculate_freq(note)
+              track.synth.schedule_note(freq, play_time, duration)
+            end
           end
         end
       elsif track.type == :rhythmic
@@ -443,6 +473,18 @@ class Sequencer
     end
 
     JS.global.call(:updatePlayhead, step_index)
+  end
+
+  def set_arpeggiator_enabled(track_index, enabled)
+    track = @tracks[track_index]
+    if track && track.type == :melodic
+      track.arpeggiator.enabled = (enabled == true || enabled == "true")
+    end
+  end
+
+  def get_arpeggiator_status(track_index)
+    track = @tracks[track_index]
+    (track && track.type == :melodic && track.arpeggiator.enabled) ? true : false
   end
 
   def calculate_freq(note)

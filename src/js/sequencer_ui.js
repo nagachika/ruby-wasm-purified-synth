@@ -215,6 +215,32 @@ export function setupSequencer(vm) {
             renderSequencer();
         };
 
+        // Arpeggiator Toggle Button (Melodic only)
+        // TODO: Find more intuitive icons for Arpeggiator state. 
+        // Currently using 'dehaze' (stacked) for Off and 'clear_all' (staggered) for On.
+        const arpBtn = document.createElement("button");
+        let isArp = false;
+        if (trackType === "melodic") {
+            try { isArp = vm.eval(`$sequencer.get_arpeggiator_status(${t})`).toString() === "true"; } catch(e) {}
+            arpBtn.innerHTML = `<span class="material-icons" style="font-size: 1.2rem;">${isArp ? "clear_all" : "dehaze"}</span>`;
+            arpBtn.style.background = isArp ? "#4dabf7" : "#444";
+            arpBtn.style.color = isArp ? "white" : "#ccc";
+            arpBtn.style.cursor = "pointer";
+            arpBtn.title = "Arpeggiator ON/OFF";
+            arpBtn.onclick = () => {
+                vm.eval(`$sequencer.set_arpeggiator_enabled(${t}, ${!isArp})`);
+                renderSequencer();
+            };
+        } else {
+            arpBtn.innerHTML = `<span class="material-icons" style="font-size: 1.2rem;">dehaze</span>`;
+            arpBtn.style.background = "#222";
+            arpBtn.style.color = "#555";
+            arpBtn.style.cursor = "default";
+            arpBtn.style.opacity = "0.3";
+        }
+        arpBtn.style.padding = "4px";
+        arpBtn.style.border = "1px solid #555";
+
         const knobContainer = document.createElement("div");
         knobContainer.style.display = "flex";
         knobContainer.style.alignItems = "center";
@@ -254,6 +280,7 @@ export function setupSequencer(vm) {
         btnRow.appendChild(removeBtn);
         btnRow.appendChild(muteBtn);
         btnRow.appendChild(soloBtn);
+        btnRow.appendChild(arpBtn);
         btnRow.appendChild(knobContainer);
 
         controlDiv.appendChild(labelBtn);
