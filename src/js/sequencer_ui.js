@@ -53,7 +53,6 @@ export function setupSequencer(vm) {
   const measuresInput = document.getElementById("measures");
   const measuresDisplay = document.getElementById("val_measures");
   const rootFreqInput = document.getElementById("root_freq");
-  const yAxisSelect = document.getElementById("y_axis_dim");
   const swingInput = document.getElementById("swing_amount");
 
   // Chord Selector Modal (Melodic)
@@ -623,7 +622,6 @@ export function setupSequencer(vm) {
       try{vm.eval(`$sequencer.bpm = ${bpmInput.value}`);}catch(e){}
   });
   rootFreqInput.addEventListener("change", () => { try{vm.eval(`$sequencer.root_freq = ${rootFreqInput.value}`);}catch(e){} });
-  yAxisSelect.addEventListener("change", () => { try{vm.eval(`$sequencer.y_axis_dim = ${yAxisSelect.value}`);}catch(e){} });
 
   if (swingInput) {
       swingInput.addEventListener("input", () => {

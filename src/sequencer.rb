@@ -74,7 +74,6 @@ end
 class Sequencer
   attr_accessor :bpm
   attr_accessor :root_freq
-  attr_accessor :y_axis_dim # 3, 4, or 5
   attr_accessor :swing_amount # 0.0 to 1.0 (0 = straight, >0 = swing)
 
   attr_reader :is_playing, :current_step, :tracks, :current_track_index, :total_steps
@@ -84,7 +83,6 @@ class Sequencer
     @ctx = ctx
     @bpm = 120
     @root_freq = 261.63 # C4
-    @y_axis_dim = 3
     @swing_amount = 0.0
 
     @total_steps = 128 # Default 4 bars (32 steps * 4)
