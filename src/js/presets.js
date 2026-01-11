@@ -60,7 +60,8 @@ export function setupPresets(vm) {
     const name = nameInput.value.trim();
     if (!name) return alert("Please enter a preset name.");
     try {
-      const json = vm.eval("$synth.export_settings").toString();
+      // Always save the full patch structure (works for both legacy-style and custom)
+      const json = vm.eval("$synth.export_patch").toString();
       const presets = getPresets();
       presets[name] = json;
       savePresets(presets);
@@ -73,9 +74,29 @@ export function setupPresets(vm) {
     if (!name) return;
     const presets = getPresets();
     if (presets[name]) {
-        window._tempPresetJson = presets[name];
-        vm.eval(`$synth.import_settings(JS.global[:_tempPresetJson])`);
-        updateUIFromSettings(presets[name]);
+        const json = presets[name];
+        window._tempPresetJson = json;
+
+        try {
+            const data = JSON.parse(json);
+            if (data.nodes) {
+                // New Modular Patch Format
+                vm.eval(`$synth.import_patch(JS.global[:_tempPresetJson])`);
+                if (window.modularEditor) {
+                    window.modularEditor.loadPatch(data);
+                }
+            } else {
+                // Legacy Format
+                vm.eval(`$synth.import_settings(JS.global[:_tempPresetJson])`);
+                updateUIFromSettings(json);
+                // Update Modular Editor visualization
+                const patchJson = vm.eval("$synth.export_patch").toString();
+                const patch = JSON.parse(patchJson);
+                if (window.modularEditor) {
+                    window.modularEditor.loadPatch(patch);
+                }
+            }
+        } catch(e) { console.error(e); }
     }
   };
   deleteBtn.onclick = () => {

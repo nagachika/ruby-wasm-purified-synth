@@ -216,7 +216,7 @@ export function setupSequencer(vm) {
         };
 
         // Arpeggiator Toggle Button (Melodic only)
-        // TODO: Find more intuitive icons for Arpeggiator state. 
+        // TODO: Find more intuitive icons for Arpeggiator state.
         // Currently using 'dehaze' (stacked) for Off and 'clear_all' (staggered) for On.
         const arpBtn = document.createElement("button");
         let isArp = false;

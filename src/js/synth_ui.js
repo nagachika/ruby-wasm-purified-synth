@@ -1,58 +1,762 @@
-const uiIds = [
-  "osc_type", "filter_type", "cutoff", "resonance",
-  "attack", "decay", "sustain", "release",
-  "lfo_on", "lfo_waveform", "lfo_rate", "lfo_depth",
-  "delay_time", "delay_feedback", "delay_mix",
-  "reverb_seconds", "reverb_mix"
-];
+const NODE_TYPES = {
+  Oscillator: {
+    initParams: { type: "sawtooth", frequency: 440 },
+    inputs: ["frequency", "detune"],
+    hasOutput: true,
+    hasInput: false
+  },
+  Noise: {
+    initParams: {},
+    inputs: [],
+    hasOutput: true,
+    hasInput: false
+  },
+  Constant: {
+    initParams: { offset: 1.0 },
+    inputs: ["offset"],
+    hasOutput: true,
+    hasInput: false
+  },
+  BiquadFilter: {
+    initParams: { type: "lowpass", frequency: 2000, q: 1.0 },
+    inputs: ["frequency", "detune", "Q", "gain"],
+    hasOutput: true,
+    hasInput: true
+  },
+  CombFilter: {
+    initParams: { frequency: 440, q: 0.5 },
+    inputs: ["frequency", "q"],
+    hasOutput: true,
+    hasInput: true
+  },
+  Gain: {
+    initParams: { gain: 1.0 },
+    inputs: ["gain"],
+    hasOutput: true,
+    hasInput: true
+  },
+  ADSR: {
+    initParams: { attack: 0.1, decay: 0.2, sustain: 0.5, release: 0.5 },
+    inputs: [],
+    hasOutput: true,
+    hasInput: false
+  },
+  Destination: {
+    initParams: {},
+    inputs: [],
+    hasOutput: false,
+    hasInput: true,
+    isSpecial: true
+  }
+};
+
+class ModularEditor {
+  constructor(containerId, vm) {
+    this.container = d3.select(containerId);
+    this.vm = vm;
+    this.nodes = [];
+    this.connections = [];
+    this.svg = null;
+    this.initSVG();
+    this.loadDefaultPatch();
+  }
+
+  initSVG() {
+    this.container.selectAll("*").remove();
+    const width = this.container.node().clientWidth;
+    const height = this.container.node().clientHeight;
+
+    this.svg = this.container.append("svg")
+      .attr("width", "100%")
+      .attr("height", "100%")
+      .style("background", "#1a1a1a")
+      .style("display", "block");
+
+    // Arrow marker for connections
+    this.svg.append("defs").append("marker")
+      .attr("id", "arrowhead")
+      .attr("viewBox", "0 -5 10 10")
+      .attr("refX", 8)
+      .attr("refY", 0)
+      .attr("orient", "auto")
+      .attr("markerWidth", 6)
+      .attr("markerHeight", 6)
+      .append("path")
+      .attr("d", "M0,-5L10,0L0,5")
+      .attr("fill", "#888");
+
+    this.edgeGroup = this.svg.append("g").attr("class", "edges");
+    this.nodeGroup = this.svg.append("g").attr("class", "nodes");
+
+    // Auto Layout Button
+    this.container.append("button")
+      .text("Auto Layout")
+      .style("position", "absolute")
+      .style("top", "10px")
+      .style("right", "10px")
+      .style("z-index", "100")
+      .style("padding", "5px 10px")
+      .style("background", "#444")
+      .style("color", "#fff")
+      .style("border", "none")
+      .style("border-radius", "4px")
+      .style("cursor", "pointer")
+      .on("click", () => this.autoLayout());
+
+    // Drag line for creating new connections
+    this.dragLine = this.svg.append("line")
+      .attr("class", "drag-line")
+      .attr("stroke", "#4dabf7")
+      .attr("stroke-width", 2)
+      .attr("stroke-dasharray", "5,5")
+      .style("display", "none")
+      .style("pointer-events", "none"); // Let events pass through to target ports
+
+    this.svg.on("mousemove", (e) => this.onMouseMove(e))
+            .on("mouseup", () => this.onMouseUp())
+            .on("click", (e) => {
+              if (e.target.tagName === 'svg') this.select(null);
+              this.hideContextMenu();
+            })
+            .on("contextmenu", (e) => {
+               e.preventDefault();
+               const [x, y] = d3.pointer(e);
+               this.showContextMenu(e.pageX, e.pageY, x, y);
+            });
+
+    this.createContextMenu();
+    this.createParamEditor();
+    this.draggingConnection = null;
+    this.selected = null; // { type: 'node'|'edge', id: string }
+
+    d3.select("body").on("keydown.modular", (e) => {
+       const tag = e.target.tagName.toUpperCase();
+       if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+
+       if (e.key === "Backspace" || e.key === "Delete") {
+         this.deleteSelected();
+       }
+    });
+  }
+
+  createParamEditor() {
+    this.paramEditor = d3.select("body").append("div")
+      .attr("class", "param-editor")
+      .style("position", "fixed")
+      .style("top", "50%")
+      .style("left", "50%")
+      .style("transform", "translate(-50%, -50%)")
+      .style("background", "#333")
+      .style("border", "1px solid #555")
+      .style("border-radius", "8px")
+      .style("padding", "20px")
+      .style("z-index", "2000")
+      .style("display", "none")
+      .style("color", "#fff")
+      .style("box-shadow", "0 0 20px rgba(0,0,0,0.5)");
+
+    this.paramEditorOverlay = d3.select("body").append("div")
+      .style("position", "fixed")
+      .style("top", "0")
+      .style("left", "0")
+      .style("width", "100%")
+      .style("height", "100%")
+      .style("background", "rgba(0,0,0,0.5)")
+      .style("z-index", "1900")
+      .style("display", "none")
+      .on("click", () => this.hideParamEditor());
+  }
+
+  showParamEditor(node) {
+    if (node.type === "Destination") return;
+
+    this.paramEditor.html("");
+    this.paramEditor.append("h3").text(`Edit Node`).style("margin-top", "0");
+
+    // Node ID (Name)
+    const idRow = this.paramEditor.append("div").style("margin-bottom", "10px");
+    idRow.append("label").text("Node ID: ").style("display", "block").style("font-size", "12px").style("color", "#aaa");
+    idRow.append("input")
+      .attr("type", "text")
+      .attr("value", node.id)
+      .style("width", "100%")
+      .style("padding", "5px")
+      .on("change", (event) => {
+         const newId = event.target.value.trim();
+         if (newId && newId !== node.id) {
+           // Check for collision
+           if (this.nodes.find(n => n.id === newId)) {
+             alert("ID already exists!");
+             event.target.value = node.id;
+             return;
+           }
+           // Update connections
+           this.connections.forEach(c => {
+             if (c.from === node.id) c.from = newId;
+             if (c.to.split('.')[0] === node.id) {
+               c.to = newId + (c.to.includes('.') ? '.' + c.to.split('.')[1] : '');
+             }
+           });
+           node.id = newId;
+           this.render();
+           this.syncToRuby();
+         }
+      });
+
+    // Frequency tracking toggle for Oscillators
+    if (node.type === "Oscillator") {
+      const row = this.paramEditor.append("div").style("margin-bottom", "10px");
+      row.append("label").text("Keyboard Tracking: ").style("margin-right", "10px");
+      row.append("input")
+        .attr("type", "checkbox")
+        .property("checked", node.freq_track)
+        .on("change", function() {
+          node.freq_track = this.checked;
+          editor.syncToRuby();
+        });
+    }
+
+    const typeInfo = NODE_TYPES[node.type];
+    Object.keys(typeInfo.initParams).forEach(param => {
+      const val = node.params[param];
+      const row = this.paramEditor.append("div").style("margin-bottom", "10px");
+      row.append("label").text(param + ": ").style("display", "block").style("font-size", "12px").style("color", "#aaa");
+
+      let input;
+      if (param === "type" && (node.type === "Oscillator" || node.type === "BiquadFilter")) {
+         input = row.append("select")
+           .style("width", "100%")
+           .style("padding", "5px")
+           .on("change", function() {
+              node.params[param] = this.value;
+              editor.syncToRuby();
+           });
+
+         const options = node.type === "Oscillator" ?
+           ["sawtooth", "square", "triangle", "sine"] :
+           ["lowpass", "highpass", "bandpass", "notch", "peaking", "allpass", "lowshelf", "highshelf"];
+
+         options.forEach(opt => {
+           input.append("option").text(opt).attr("value", opt).property("selected", val === opt);
+         });
+      } else {
+         input = row.append("input")
+           .attr("type", typeof val === "number" ? "number" : "text")
+           .attr("step", "any")
+           .attr("value", val)
+           .style("width", "100%")
+           .style("padding", "5px")
+           .on("change", function() {
+              const newVal = (this.type === "number") ? parseFloat(this.value) : this.value;
+              node.params[param] = newVal;
+              editor.syncToRuby();
+           });
+      }
+    });
+
+    this.paramEditorOverlay.style("display", "block");
+    this.paramEditor.style("display", "block");
+    const editor = this;
+  }
+
+  hideParamEditor() {
+    this.paramEditor.style("display", "none");
+    this.paramEditorOverlay.style("display", "none");
+  }
+
+  createContextMenu() {
+    this.contextMenu = d3.select("body").append("div")
+      .attr("class", "context-menu")
+      .style("position", "absolute")
+      .style("background", "#333")
+      .style("border", "1px solid #555")
+      .style("border-radius", "4px")
+      .style("padding", "5px")
+      .style("display", "none")
+      .style("z-index", "1000");
+
+    const items = Object.keys(NODE_TYPES).filter(t => t !== "Destination");
+
+    items.forEach(type => {
+      this.contextMenu.append("div")
+        .text("Add " + type)
+        .style("padding", "5px 10px")
+        .style("cursor", "pointer")
+        .style("color", "#eee")
+        .on("mouseenter", function() { d3.select(this).style("background", "#444"); })
+        .on("mouseleave", function() { d3.select(this).style("background", "none"); })
+        .on("click", () => {
+           this.addNode(type, this.contextMenu.nodeX, this.contextMenu.nodeY);
+           this.hideContextMenu();
+        });
+    });
+  }
+
+  showContextMenu(pageX, pageY, nodeX, nodeY) {
+    this.contextMenu
+      .style("left", pageX + "px")
+      .style("top", pageY + "px")
+      .style("display", "block");
+    this.contextMenu.nodeX = nodeX;
+    this.contextMenu.nodeY = nodeY;
+  }
+
+  hideContextMenu() {
+    this.contextMenu.style("display", "none");
+  }
+
+  addNode(type, x, y) {
+    let baseId = type.toLowerCase();
+    let id = baseId;
+    let i = 2;
+    while (this.nodes.find(n => n.id === id)) {
+      id = baseId + i;
+      i++;
+    }
+
+    const node = {
+      id: id,
+      type: type,
+      x: x,
+      y: y,
+      params: { ...NODE_TYPES[type].initParams },
+      freq_track: (type === "Oscillator") // Default to true for new oscillators
+    };
+    this.nodes.push(node);
+    this.render();
+    this.syncToRuby();
+  }
+
+  select(item) {
+    this.selected = item;
+    this.render();
+  }
+
+  deleteSelected() {
+    if (!this.selected) return;
+
+    if (this.selected.type === "node") {
+      // Don't delete Output node
+      if (this.selected.id === "out") return;
+
+      this.nodes = this.nodes.filter(n => n.id !== this.selected.id);
+      this.connections = this.connections.filter(c => c.from !== this.selected.id && c.to.split('.')[0] !== this.selected.id);
+    } else if (this.selected.type === "edge") {
+      this.connections = this.connections.filter(c => `${c.from}-${c.to}` !== this.selected.id);
+    }
+
+    this.selected = null;
+    this.render();
+    this.syncToRuby();
+  }
+
+  onMouseMove(event) {
+    if (!this.draggingConnection) return;
+    const [x, y] = d3.pointer(event);
+    this.dragLine
+      .attr("x2", x)
+      .attr("y2", y);
+  }
+
+  onMouseUp() {
+    if (this.draggingConnection) {
+      this.dragLine.style("display", "none");
+      this.draggingConnection = null;
+    }
+  }
+
+  startConnectionDrag(nodeId, x, y) {
+    this.draggingConnection = { sourceId: nodeId };
+    this.dragLine
+      .attr("x1", x)
+      .attr("y1", y)
+      .attr("x2", x)
+      .attr("y2", y)
+      .style("display", "block");
+  }
+
+    completeConnection(targetId, targetParam) {
+      if (!this.draggingConnection) return;
+
+      const sourceId = this.draggingConnection.sourceId;
+      if (sourceId === targetId) return; // Prevent self-connection
+
+      // Logic:
+      // If targetParam is null, it's the main input -> connect to "targetId"
+      // If targetParam is string, it's a param -> connect to "targetId.targetParam"
+
+      const targetKey = targetParam ? `${targetId}.${targetParam}` : targetId;
+
+      // Check if connection already exists
+      const exists = this.connections.some(c => c.from === sourceId && c.to === targetKey);
+
+      // Also handle legacy "out" mapping if connecting to Destination
+      const targetNode = this.nodes.find(n => n.id === targetId);
+      let finalKey = targetKey;
+      if (targetNode && targetNode.type === "Destination") {
+          finalKey = "out";
+      }
+
+      if (!exists) {
+        // Remove any existing connection if we are replacing it?
+        // Modular synthesizers usually allow multiple cables to one input (mixing)
+        // or one output to multiple (splitting).
+        // WebAudio params can take multiple connections (summing).
+        // So allow multiple.
+
+        this.connections.push({ from: sourceId, to: finalKey });
+        this.renderEdges();
+        this.syncToRuby();
+      }
+
+      this.dragLine.style("display", "none");
+      this.draggingConnection = null;
+    }
+  autoLayout() {
+    if (!window.ELK) {
+      console.error("ELK.js not loaded");
+      return;
+    }
+
+    const elk = new ELK();
+
+    const graph = {
+      id: "root",
+      layoutOptions: {
+        'elk.algorithm': 'layered',
+        'elk.direction': 'RIGHT',
+        'elk.spacing.nodeNode': '40',
+        'elk.layered.spacing.nodeNodeBetweenLayers': '60'
+      },
+      children: this.nodes.map(n => ({
+        id: n.id,
+        width: 140,
+        height: this.getNodeHeight(n)
+      })),
+      edges: this.connections.map(c => ({
+        id: `${c.from}-${c.to}`,
+        sources: [c.from],
+        targets: [c.to.split('.')[0]]
+      }))
+    };
+
+    elk.layout(graph).then(layoutedGraph => {
+      layoutedGraph.children.forEach(child => {
+        const node = this.nodes.find(n => n.id === child.id);
+        if (node) {
+          node.x = child.x + 50; // Add some padding/offset
+          node.y = child.y + 50;
+        }
+      });
+      this.render();
+    }).catch(console.error);
+  }
+
+  loadDefaultPatch() {
+    this.nodes = [
+      { id: "vco", type: "Oscillator", x: 50, y: 50, params: { type: "sawtooth" }, freq_track: true },
+      { id: "vcf", type: "BiquadFilter", x: 250, y: 50, params: { type: "lowpass", frequency: 2000, q: 1 } },
+      { id: "vca", type: "Gain", x: 450, y: 50, params: { gain: 1 } },
+      { id: "env", type: "ADSR", x: 450, y: 200, params: { attack: 0.1, decay: 0.2, sustain: 0.5, release: 0.5 } },
+      { id: "out", type: "Destination", x: 650, y: 50 }
+    ];
+
+    this.connections = [
+      { from: "vco", to: "vcf" },
+      { from: "vcf", to: "vca" },
+      { from: "vca", to: "out" },
+      { from: "env", to: "vca.gain" }
+    ];
+
+    this.render();
+    this.syncToRuby();
+  }
+
+  loadPatch(patch) {
+    if (!patch || !patch.nodes) return;
+    this.nodes = patch.nodes.map(n => ({
+        ...n,
+        // Ensure x,y exist (if loaded from Ruby export, they might not, so we might need autoLayout)
+        x: n.x || 0,
+        y: n.y || 0
+    }));
+
+    // Check if we need autoLayout (e.g. generated from legacy preset without coords)
+    // Do this BEFORE adding the manual 'out' node which has fixed coords.
+    const needsLayout = this.nodes.length > 0 && this.nodes.every(n => n.x === 0 && n.y === 0);
+
+    // Ruby export structure might need adjustment to match Editor's expectations
+    // Editor uses "Destination" type node for "out". Ruby doesn't have it in nodes list.
+    // So we must add "out" node manually if missing.
+    if (!this.nodes.find(n => n.id === "out")) {
+         this.nodes.push({ id: "out", type: "Destination", x: 600, y: 50 });
+    }
+
+    this.connections = patch.connections;
+    this.render();
+
+    if (needsLayout) {
+        this.autoLayout();
+    }
+  }
+
+  render() {
+    this.renderEdges();
+    this.renderNodes();
+  }
+
+  renderNodes() {
+    const editor = this;
+    const nodes = this.nodeGroup.selectAll(".node")
+      .data(this.nodes, d => d.id);
+
+    nodes.exit().remove();
+
+    const nodeEnter = nodes.enter().append("g")
+      .attr("class", "node")
+      .call(d3.drag()
+        .on("drag", function(event, d) {
+          d.x += event.dx;
+          d.y += event.dy;
+          d3.select(this).attr("transform", `translate(${d.x},${d.y})`);
+          editor.renderEdges();
+        })
+        .on("end", () => {
+          // editor.syncToRuby(); // Optional: sync on drag end
+        })
+      );
+
+    nodeEnter.append("rect")
+      .attr("width", 140)
+      .attr("height", d => this.getNodeHeight(d))
+      .attr("rx", 5)
+      .attr("fill", "#333")
+      .attr("stroke", d => (editor.selected && editor.selected.type === 'node' && editor.selected.id === d.id) ? "#4dabf7" : "#555")
+      .attr("stroke-width", 2)
+      .on("click", function(event, d) {
+        event.stopPropagation();
+        editor.select({ type: 'node', id: d.id });
+      })
+      .on("dblclick", function(event, d) {
+         event.stopPropagation();
+         editor.showParamEditor(d);
+      });
+
+    nodeEnter.append("text")
+      .attr("class", "node-label")
+      .attr("x", 10)
+      .attr("y", 20)
+      .attr("fill", "#fff")
+      .style("font-weight", "bold")
+      .style("pointer-events", "none")
+      .text(d => d.id.toUpperCase());
+
+    nodeEnter.append("text")
+      .attr("class", "node-type")
+      .attr("x", 10)
+      .attr("y", 35)
+      .attr("fill", "#aaa")
+      .style("font-size", "10px")
+      .style("pointer-events", "none")
+      .text(d => d.type);
+
+    // Ports
+    nodeEnter.each(function(d) {
+      const g = d3.select(this);
+      const typeInfo = NODE_TYPES[d.type];
+
+            // Output port (on the right)
+            if (typeInfo.hasOutput) {
+              g.append("circle")
+                .attr("class", "port output")
+                .attr("cx", 140)
+                .attr("cy", 20)
+                .attr("r", 6)
+                .attr("fill", "#4dabf7")
+                .attr("stroke", "#222")
+                .attr("stroke-width", 1)
+                .on("mousedown", function(event) {
+                   event.stopPropagation();
+                   const [mx, my] = d3.pointer(event, editor.svg.node());
+                   editor.startConnectionDrag(d.id, mx, my);
+                });
+            }
+
+            // Main Audio Input (Cream color)
+            if (typeInfo.hasInput) {
+              const y = 20; // Aligned with node name
+              g.append("circle")
+                .attr("class", "port input-main")
+                .attr("cx", 0)
+                .attr("cy", y)
+                .attr("r", 6)
+                .attr("fill", "#ffffb0") // Cream color
+                .attr("stroke", "#222")
+                .attr("stroke-width", 1)
+                .on("mouseup", function(event) {
+                   event.stopPropagation();
+                   editor.completeConnection(d.id, null);
+                });
+            }
+
+            // Parameter Input ports (Pink color)
+            typeInfo.inputs.forEach((input, i) => {
+              const y = 55 + i * 20;
+
+              g.append("circle")
+                .attr("class", "port input-param")
+                .attr("cx", 0)
+                .attr("cy", y)
+                .attr("r", 6)
+                .attr("fill", "#f06595")
+                .attr("stroke", "#222")
+                .attr("stroke-width", 1)
+                .attr("data-port", input)
+                .on("mouseup", function(event) {
+                   event.stopPropagation();
+                   editor.completeConnection(d.id, input);
+                });
+
+              g.append("text")
+                .attr("x", 12)
+                .attr("y", y + 4)
+                .attr("fill", "#eee")
+                .style("font-size", "10px")
+                .style("pointer-events", "none")
+                .text(input);
+            });
+
+            // Special input for Destination - Now handled via generic hasInput logic above,
+            // but strictly Destination has hasInput=true inputs=[], so the loop above won't run.
+            // We just need to ensure the standard logic covers it.
+            // Destination hasInput=true, so it gets AUDIO IN at y=45.
+            // That's fine. We can remove the special block below.
+          });
+
+          nodes.merge(nodeEnter)
+            .attr("transform", d => `translate(${d.x},${d.y})`);
+        }
+  getNodeHeight(d) {
+    const typeInfo = NODE_TYPES[d.type];
+    if (d.type === "Destination") return 45;
+    return 45 + (typeInfo.inputs.length * 20);
+  }
+
+    renderEdges() {
+      const editor = this;
+      const links = this.connections.map(c => {
+        const source = this.nodes.find(n => n.id === c.from);
+
+        // Handle simple ID target or ID.param target
+        const parts = c.to.split('.');
+        const targetId = parts[0];
+        const targetParam = parts.length > 1 ? parts[1] : null;
+
+        const target = this.nodes.find(n => n.id === targetId);
+
+        if (!source || !target) return null;
+
+        const typeInfoTarget = NODE_TYPES[target.type];
+
+        let yOffset;
+        if (targetParam && targetParam !== "in") { // "in" for legacy destination support
+            // Parameter Input
+            const inputIdx = typeInfoTarget.inputs.indexOf(targetParam);
+            yOffset = 55 + inputIdx * 20;
+        } else {
+            // Main Audio Input
+            yOffset = 20;
+        }
+
+        return {
+          id: `${c.from}-${c.to}`,
+          x1: source.x + 140,
+          y1: source.y + 20,
+          x2: target.x,
+          y2: target.y + yOffset
+        };
+      }).filter(l => l);
+    const edges = this.edgeGroup.selectAll(".edge")
+      .data(links, d => d.id);
+
+    edges.exit().remove();
+
+    edges.enter().append("line")
+      .attr("class", "edge")
+      .attr("stroke", d => (this.selected && this.selected.type === 'edge' && this.selected.id === d.id) ? "#f06595" : "#888")
+      .attr("stroke-width", 3)
+      .attr("cursor", "pointer")
+      .attr("marker-end", "url(#arrowhead)")
+      .on("click", function(event, d) {
+        event.stopPropagation();
+        editor.select({ type: 'edge', id: d.id });
+      })
+      .merge(edges)
+      .attr("stroke", d => (this.selected && this.selected.type === 'edge' && this.selected.id === d.id) ? "#f06595" : "#888")
+      .attr("x1", d => d.x1)
+      .attr("y1", d => d.y1)
+      .attr("x2", d => d.x2)
+      .attr("y2", d => d.y2);
+  }
+
+  syncToRuby() {
+    const patch = {
+      nodes: this.nodes.filter(n => n.type !== "Destination").map(n => ({
+        id: n.id,
+        type: n.type,
+        params: n.params,
+        freq_track: !!n.freq_track
+      })),
+      connections: this.connections.map(c => ({
+        from: c.from,
+        to: c.to === "out" ? "out" : c.to
+      }))
+    };
+
+    const json = JSON.stringify(patch);
+    window._tempPatch = json;
+    this.vm.eval(`$synth.import_patch(JS.global[:_tempPatch].to_s)`);
+    delete window._tempPatch;
+  }
+}
+
+export function setupUI(vm) {
+  const editor = new ModularEditor("#modular-editor", vm);
+  window.modularEditor = editor;
+
+  // Effects are still global panels for now
+  const effectIds = [
+    "delay_time", "delay_feedback", "delay_mix",
+    "reverb_seconds", "reverb_mix"
+  ];
+
+  effectIds.forEach(id => {
+    const el = document.getElementById(id);
+    const display = document.getElementById(`val_${id}`);
+    if (el) {
+      el.addEventListener("input", () => {
+        let val = el.value;
+        if (id.includes('time') || id.includes('seconds')) val += ' s';
+        if (display) display.textContent = val;
+        vm.eval(`$synth.${id} = ${el.value}.to_f`);
+      });
+    }
+  });
+}
 
 const keyMap = {
   'z': 60, 's': 61, 'x': 62, 'd': 63, 'c': 64, 'v': 65, 'g': 66, 'b': 67, 'h': 68, 'n': 69, 'j': 70, 'm': 71,
   ',': 72, 'q': 72, '2': 73, 'w': 74, '3': 75, 'e': 76, 'r': 77, '5': 78, 't': 79, '6': 80, 'y': 81, '7': 82, 'u': 83
 };
 
-function updateParam(vm, id, el) {
-  let val;
-  if (el.type === "checkbox") {
-    val = el.checked ? "true" : "false";
-  } else if (el.type === "range") {
-    val = el.value;
-  } else {
-    val = `"${el.value}"`;
-  }
-
-  if (el.type === "range") {
-     vm.eval(`$synth.${id} = ${el.value}.to_f`);
-  } else if (el.type === "checkbox") {
-     vm.eval(`$synth.${id} = ${val}`);
-  } else {
-     vm.eval(`$synth.${id} = ${val}`);
-  }
-}
-
-export function setupUI(vm) {
-  uiIds.forEach(id => {
-    const el = document.getElementById(id);
-    const display = document.getElementById(`val_${id}`);
-    updateParam(vm, id, el);
-    el.addEventListener("input", () => {
-      if (display) {
-        let val = el.value;
-        if (id === 'cutoff') val += ' Hz';
-        if (id.includes('time') || id.includes('attack') || id.includes('decay') || id.includes('release') || id.includes('seconds')) val += ' s';
-        if (id === 'lfo_rate') val += ' Hz';
-        display.textContent = val;
-      }
-      updateParam(vm, id, el);
-    });
-  });
-}
-
 export function setupKeyboard(vm) {
   const getFreq = (note) => 440.0 * Math.pow(2.0, (note - 69) / 12.0);
   const viewSynth = document.getElementById("view-synthesizer");
 
   window.addEventListener("keydown", (e) => {
+    const tag = e.target.tagName.toUpperCase();
+    if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+
     if (e.repeat) return;
     if (!viewSynth.classList.contains("active")) return;
     const note = keyMap[e.key];
@@ -60,6 +764,9 @@ export function setupKeyboard(vm) {
   });
 
   window.addEventListener("keyup", (e) => {
+    const tag = e.target.tagName.toUpperCase();
+    if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+
     const note = keyMap[e.key];
     if (note) vm.eval(`$synth.note_off(${getFreq(note)})`);
   });
