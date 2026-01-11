@@ -1,141 +1,99 @@
-# Modular Synthesizer Architecture Design
+# Modular Synthesizer Architecture
 
-This document outlines the refactoring plan for the `Synthesizer` class, transitioning from a monolithic, hardcoded voice architecture to a flexible, node-based modular system.
+This document defines the node architecture and the JSON schema used to construct the synthesizer patch.
 
-## 1. Core Concepts
+## JSON Patch Schema
 
-The synthesizer follows a **Semi-Modular Polyphonic** architecture.
-
-*   **Global Graph (Shared)**: A fixed (or configurable) chain of effects (Delay, Reverb) applied to the mixed output of all voices within the synthesizer.
-*   **Voice Graph (Polyphonic)**: A dynamic graph of nodes instantiated for *each* active note. Unlike the previous implementation, the internal structure of a Voice is **fully modular**, allowing arbitrary connections between oscillators, filters, and envelopes.
-
-## 2. Structural Layers
-
-### 2.1 Voice Layer (Per-Note)
-When a note is triggered, a new `Voice` instance is created. This instance builds a Web Audio graph based on the current **Patch Definition**.
-
-**Capabilities:**
-*   **Arbitrary Routing**: Nodes can be connected freely.
-    *   Audio Path: `Osc1` -> `Filter` -> `VCA` -> `Output`
-    *   FM Synthesis: `Osc1` -> `Osc2.frequency`
-    *   AM Synthesis / Ring Mod: `Osc1` -> `Gain.gain` (processing Osc2)
-*   **Modulation**: Control signals (LFO, Envelopes) can drive *any* `AudioParam` (Frequency, Detune, Gain, Q, etc.).
-*   **Multiple Sources**: Mixing multiple oscillators, noise generators, or constant sources.
-
-**Lifecycle:**
-1.  **Note On**: The graph is built, oscillators started, and Attack/Decay phases of envelopes triggered.
-2.  **Note Off**: Release phase of envelopes triggered.
-3.  **Cleanup**: When the amplitude envelope finishes (or a timeout occurs), the nodes are disconnected and destroyed.
-
-### 2.2 Global Layer (Track FX)
-Processes the summed output of all active voices. Since creating Reverbs/Delays for every voice is computationally expensive, these remain global per synthesizer instance.
-
-**Chain:**
-`Voice Sum` -> `Mix Node` -> `Delay` -> `Reverb` -> `Analyser` -> (Output to Master Bus)
-
-*   **Output**: The `Synthesizer` does not connect directly to `AudioContext.destination`. It exposes its final output node (or a `connect` method) so the `Sequencer` or host app can route it.
-
-### 2.3 Master Layer (Sequencer/Mixer)
-The `Sequencer` (or a dedicated Mixer class) collects outputs from all `Synthesizer` tracks and applies final mastering effects.
-
-**Chain:**
-`Track 1 + Track 2 + ...` -> `Master Gain` -> `DynamicsCompressor` -> `AudioContext.destination`
-
-## 3. Node Types
-
-We will introduce Ruby wrapper classes for Web Audio nodes to unify interface and manage connections.
-
-### 3.1 Audio Nodes (Signal Sources & Processors)
-| Node Type | Wrapper Class | Usage |
-| :--- | :--- | :--- |
-| **Oscillator** | `OscillatorNode` | Sine, Square, Sawtooth, Triangle. Used for audible sound (VCO) or modulation (LFO). |
-| **Noise** | `NoiseNode` | White/Pink noise (via `AudioBufferSourceNode`). |
-| **Constant** | `ConstantNode` | `ConstantSourceNode`. Outputs a fixed DC offset. Crucial for shifting modulation ranges or setting base parameters. |
-| **Gain** | `GainNode` | VCA, Mixer, Amplitude modulation, Modulation depth control. |
-| **Filter** | `BiquadFilterNode` | Lowpass, Highpass, Bandpass, Notch, etc. |
-| **Delay** | `DelayNode` | Echo/Delay effects (Global layer). |
-| **Convolver** | `ConvolverNode` | Reverb (Global layer). |
-| **Compressor** | `CompressorNode` | Dynamics compression (Global layer). |
-
-### 3.2 Modulators (Control Logic)
-These abstractions manage `AudioParam` automation.
-
-*   **ADSR Envelope**:
-    *   Not a native Web Audio node (usually). Implemented as a controller that schedules ramps on a target `AudioParam`.
-    *   **Inputs**: Gate (Note On/Off).
-    *   **Targets**: Typically `GainNode.gain` (VCA) or `BiquadFilterNode.frequency` (VCF).
-
-## 4. Patch Data Structure
-
-The synthesis structure is defined by a data object (Patch). This allows for serialization and future UI editing.
-
-**JSON Schema Concept:**
+The `Synthesizer` and `Voice` classes expect a patch definition in the following JSON format:
 
 ```json
 {
-  "voice": {
-    "nodes": [
-      { "id": "osc1", "type": "Oscillator", "freq_track": true, "params": { "type": "sawtooth" } },
-      { "id": "osc2", "type": "Oscillator", "freq_track": true, "params": { "type": "sine", "detune": 10 } },
-      { "id": "lfo1", "type": "Oscillator", "params": { "type": "sine", "frequency": 5 } },
-      { "id": "lfo_depth", "type": "Gain", "params": { "gain": 100 } },
-      { "id": "filter", "type": "BiquadFilter", "params": { "type": "lowpass", "frequency": 2000, "q": 1.0 } },
-      { "id": "vca", "type": "Gain", "params": { "gain": 0 } },
-      { "id": "env1", "type": "ADSR", "params": { "attack": 0.01, "decay": 0.1, "sustain": 0.5, "release": 0.5 } }
-    ],
-    "connections": [
-      { "from": "osc1", "to": "filter" },
-      { "from": "osc2", "to": "filter" },
-      // Modulation: LFO -> Gain (Depth) -> Osc1 Detune
-      { "from": "lfo1", "to": "lfo_depth" },
-      { "from": "lfo_depth", "to": "osc1.detune" },
-      // Audio Chain
-      { "from": "filter", "to": "vca" },
-      // Envelope Control
-      { "from": "env1", "to": "vca.gain" },
-      // Final Output of Voice
-      { "from": "vca", "to": "out" }
-    ]
-  },
-  "global": {
-    "delay": { "time": 0.3, "feedback": 0.4, "mix": 0.2 },
-    "reverb": { "seconds": 2.0, "mix": 0.3 }
-  }
+  "nodes": [
+    {
+      "id": "unique_string_id",
+      "type": "NodeType",
+      "params": {
+        "param_name": "value"
+      },
+      "freq_track": boolean  // Optional: If true, this node's frequency tracks the note pitch (for Oscillators)
+    }
+  ],
+  "connections": [
+    {
+      "from": "source_node_id",
+      "to": "target_node_id"       // Connect to the node's main input
+    },
+    {
+      "from": "source_node_id",
+      "to": "target_node_id.param" // Connect to a specific parameter
+    }
+  ]
 }
 ```
 
-## 5. Class Design (Ruby)
+### Special Connection Targets
+- `"out"`: connecting to `"to": "out"` routes the signal to the Voice's main output (usually triggering the ADSR release phase properly).
 
-### `Synthesizer`
-*   **Role**: Facade, Voice Manager, Global FX container.
-*   **Members**:
-    *   `@voice_definition`: The parsed patch structure.
-    *   `@active_voices`: Hash `{ note_number => VoiceInstance }`.
-    *   `@output_node`: Final GainNode of the global chain.
-*   **Methods**:
-    *   `note_on(note, velocity)`
-    *   `note_off(note)`
-    *   `connect(destination)`
-    *   `load_patch(json)`
+## Available Nodes
 
-### `Voice`
-*   **Role**: Manages the lifecycle of a single note's graph.
-*   **Constructor**: `Voice.new(ctx, note, definition, output_bus)`
-    *   Parses `definition[:nodes]` and creates wrappers.
-    *   Parses `definition[:connections]` and links nodes/params.
-    *   Handles "special" connections like `target: "out"`.
-    *   Applies `note` frequency to oscillators marked as keyboard-tracking.
+### Source Nodes
 
-### `AudioNodeWrapper` (Base)
-*   **Role**: Wraps `JS::Object`, manages connections.
-*   **Methods**:
-    *   `connect(target)`: Handles `AudioNode` vs `AudioParam` connections.
-    *   `disconnect()`
-    *   `param(name)`: Returns `AudioParamWrapper`.
+#### `Oscillator`
+Standard periodic waveform generator.
+- **Init Params:**
+  - `type`: `"sine"`, `"square"`, `"sawtooth"`, `"triangle"`
+  - `frequency`: Base frequency (Hz). Ignored if `freq_track: true`.
+- **Audio Params (Inputs):**
+  - `frequency`: Modulation of frequency (Hz).
+  - `detune`: Detuning in cents.
 
-## 6. Implementation Roadmap
+#### `Noise`
+White noise generator.
+- **Init Params:** None.
+- **Audio Params (Inputs):** None.
 
-1.  **Node Wrappers**: Create the `AudioNodeWrapper` hierarchy in `src/synthesizer/nodes.rb` (or similar).
-2.  **Voice Factory**: Implement the logic to instantiate and connect nodes from the JSON definition.
-3.  **Synthesizer Refactor**: Update `src/synthesizer.rb` to use the new Voice system and Global chain.
-4.  **Preset Migration**: Update existing hardcoded presets to the new JSON format.
+#### `Constant`
+Outputs a constant DC value. Useful for control signals or offsets.
+- **Init Params:**
+  - `offset`: The constant value.
+- **Audio Params (Inputs):**
+  - `offset`: Modulate the constant value.
+
+### Processor Nodes
+
+#### `BiquadFilter`
+Standard multi-mode filter.
+- **Init Params:**
+  - `type`: `"lowpass"`, `"highpass"`, `"bandpass"`, `"notch"`, `"peaking"`, `"allpass"`, `"lowshelf"`, `"highshelf"`
+  - `frequency`: Cutoff frequency (Hz).
+  - `q`: Q factor / Resonance.
+- **Audio Params (Inputs):**
+  - `frequency`: Cutoff modulation.
+  - `detune`: Cutoff detuning.
+  - `Q`: Resonance modulation.
+  - `gain`: Gain (used for peaking/shelf filters).
+
+#### `CombFilter`
+A custom filter utilizing delay and feedback.
+- **Init Params:**
+  - `frequency`: Frequency of the comb notches (Hz).
+  - `q`: Feedback amount (0.0 to ~0.95).
+- **Audio Params (Inputs):**
+  - `frequency`: Modulates delay time (inverse of frequency).
+  - `q` / `resonance`: Modulates feedback gain.
+
+#### `Gain`
+Amplifies or attenuates the signal.
+- **Init Params:**
+  - `gain`: Initial gain value (default 1.0).
+- **Audio Params (Inputs):**
+  - `gain`: Amplitude modulation (AM).
+
+#### `ADSR`
+Envelope generator. Note: In this architecture, ADSR is treated as a signal source that outputs 0->1->0 values, usually connected to a `Gain` node's gain parameter.
+- **Init Params:**
+  - `attack`: Time in seconds.
+  - `decay`: Time in seconds.
+  - `sustain`: Level (0.0 - 1.0).
+  - `release`: Time in seconds.
+- **Audio Params (Inputs):** None.
