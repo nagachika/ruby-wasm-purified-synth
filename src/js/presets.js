@@ -67,6 +67,7 @@ export function setupPresets(vm) {
       savePresets(presets);
       alert(`Preset "${name}" saved!`);
       nameInput.value = "";
+      updateList();
     } catch(e) { console.error(e); }
   };
   loadBtn.onclick = () => {
@@ -101,10 +102,11 @@ export function setupPresets(vm) {
   };
   deleteBtn.onclick = () => {
     const name = listSelect.value;
-    if (!name && confirm(`Delete preset "${name}"?`)) {
+    if (name && confirm(`Delete preset "${name}"?`)) {
         const presets = getPresets();
         delete presets[name];
         savePresets(presets);
+        updateList();
     }
   };
 }
