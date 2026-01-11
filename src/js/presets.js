@@ -87,15 +87,7 @@ export function setupPresets(vm) {
                     window.modularEditor.loadPatch(data);
                 }
             } else {
-                // Legacy Format
-                vm.eval(`$synth.import_settings(JS.global[:_tempPresetJson])`);
-                updateUIFromSettings(json);
-                // Update Modular Editor visualization
-                const patchJson = vm.eval("$synth.export_patch").toString();
-                const patch = JSON.parse(patchJson);
-                if (window.modularEditor) {
-                    window.modularEditor.loadPatch(patch);
-                }
+                console.warn("Legacy preset format is no longer supported.");
             }
         } catch(e) { console.error(e); }
     }

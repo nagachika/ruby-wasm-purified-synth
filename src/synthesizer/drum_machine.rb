@@ -31,15 +31,20 @@ class DrumMachine
 
   def create_kick
     s = Synthesizer.new(@ctx, enable_effects: false)
-    s.osc_type = "sine"
-    s.filter_type = "lowpass"
-    s.cutoff = 100.0
-    s.resonance = 0.0
-    s.attack = 0.01
-    s.decay = 0.2
-    s.sustain = 0.0
-    s.release = 0.1
-    s.lfo_on = false
+    s.custom_patch = {
+      nodes: [
+        { id: "vco", type: "Oscillator", freq_track: true, params: { type: "triangle" } },
+        { id: "vcf", type: "BiquadFilter", params: { type: "lowpass", frequency: 100.0, q: 0.0 } },
+        { id: "vca", type: "Gain", params: { gain: 0.0 } },
+        { id: "env", type: "ADSR", params: { attack: 0.01, decay: 0.2, sustain: 0.0, release: 0.1 } }
+      ],
+      connections: [
+        { from: "vco", to: "vcf" },
+        { from: "vcf", to: "vca" },
+        { from: "vca", to: "out" },
+        { from: "env", to: "vca.gain" }
+      ]
+    }
     s.volume = 1.5
     s.connect(@master_gain)
     s
@@ -47,20 +52,20 @@ class DrumMachine
 
   def create_snare
     s = Synthesizer.new(@ctx, enable_effects: false)
-    s.osc_type = "triangle"
-    # Actually snare needs noise. But our synth has simple osc.
-    # Let's use high frequency triangle + noise if we could mix, but we can't in current Synth.
-    # We'll stick to 'noise' osc type if available or Triangle with envelope.
-    # Wait, Synth supports "noise" osc_type!
-    s.osc_type = "noise"
-    s.filter_type = "bandpass"
-    s.cutoff = 1000.0
-    s.resonance = 2.0
-    s.attack = 0.01
-    s.decay = 0.15
-    s.sustain = 0.0
-    s.release = 0.1
-    s.lfo_on = false
+    s.custom_patch = {
+      nodes: [
+        { id: "vco", type: "Noise", params: { type: "white" } },
+        { id: "vcf", type: "BiquadFilter", params: { type: "bandpass", frequency: 1000.0, q: 2.0 } },
+        { id: "vca", type: "Gain", params: { gain: 0.0 } },
+        { id: "env", type: "ADSR", params: { attack: 0.01, decay: 0.15, sustain: 0.0, release: 0.1 } }
+      ],
+      connections: [
+        { from: "vco", to: "vcf" },
+        { from: "vcf", to: "vca" },
+        { from: "vca", to: "out" },
+        { from: "env", to: "vca.gain" }
+      ]
+    }
     s.volume = 0.8
     s.connect(@master_gain)
     s
@@ -68,15 +73,20 @@ class DrumMachine
 
   def create_hihat
     s = Synthesizer.new(@ctx, enable_effects: false)
-    s.osc_type = "noise"
-    s.filter_type = "highpass"
-    s.cutoff = 5000.0
-    s.resonance = 0.0
-    s.attack = 0.01
-    s.decay = 0.05
-    s.sustain = 0.0
-    s.release = 0.05
-    s.lfo_on = false
+    s.custom_patch = {
+      nodes: [
+        { id: "vco", type: "Noise", params: { type: "white" } },
+        { id: "vcf", type: "BiquadFilter", params: { type: "highpass", frequency: 5000.0, q: 0.0 } },
+        { id: "vca", type: "Gain", params: { gain: 0.0 } },
+        { id: "env", type: "ADSR", params: { attack: 0.01, decay: 0.05, sustain: 0.0, release: 0.05 } }
+      ],
+      connections: [
+        { from: "vco", to: "vcf" },
+        { from: "vcf", to: "vca" },
+        { from: "vca", to: "out" },
+        { from: "env", to: "vca.gain" }
+      ]
+    }
     s.volume = 0.6
     s.connect(@master_gain)
     s
@@ -84,15 +94,20 @@ class DrumMachine
 
   def create_openhat
     s = Synthesizer.new(@ctx, enable_effects: false)
-    s.osc_type = "noise"
-    s.filter_type = "highpass"
-    s.cutoff = 4000.0
-    s.resonance = 0.0
-    s.attack = 0.02
-    s.decay = 0.3
-    s.sustain = 0.0
-    s.release = 0.1
-    s.lfo_on = false
+    s.custom_patch = {
+      nodes: [
+        { id: "vco", type: "Noise", params: { type: "white" } },
+        { id: "vcf", type: "BiquadFilter", params: { type: "highpass", frequency: 4000.0, q: 0.0 } },
+        { id: "vca", type: "Gain", params: { gain: 0.0 } },
+        { id: "env", type: "ADSR", params: { attack: 0.02, decay: 0.3, sustain: 0.0, release: 0.1 } }
+      ],
+      connections: [
+        { from: "vco", to: "vcf" },
+        { from: "vcf", to: "vca" },
+        { from: "vca", to: "out" },
+        { from: "env", to: "vca.gain" }
+      ]
+    }
     s.volume = 0.6
     s.connect(@master_gain)
     s
@@ -112,7 +127,7 @@ class DrumMachine
 
     # Trigger with a fixed pitch appropriate for the instrument
     freq = case instrument_name
-           when "Kick" then 60.0
+           when "Kick" then 80.0
            when "Snare" then 200.0
            when "HiHat", "OpenHat" then 1000.0
            else 440.0

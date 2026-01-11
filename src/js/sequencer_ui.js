@@ -169,8 +169,13 @@ export function setupSequencer(vm) {
                 const name = e.target.value;
                 if (name && presets[name]) {
                     window._tempTrackPresetJson = presets[name];
-                    vm.eval(`$sequencer.tracks[${t}].synth.import_settings(JS.global[:_tempTrackPresetJson])`);
-                    vm.eval(`$sequencer.tracks[${t}].preset_name = "${name}"`);
+                    const data = JSON.parse(presets[name]);
+                    if (data.nodes) {
+                        vm.eval(`$sequencer.tracks[${t}].synth.import_patch(JS.global[:_tempTrackPresetJson])`);
+                        vm.eval(`$sequencer.tracks[${t}].preset_name = "${name}"`);
+                    } else {
+                        console.warn("Legacy preset format is no longer supported in sequencer.");
+                    }
                 }
             };
         } else {

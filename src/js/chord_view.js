@@ -35,7 +35,12 @@ export function setupChordView(vm) {
        const presets = getPresets();
        if (presets[name]) {
          window._tempPreviewJson = presets[name];
-         vm.eval(`$previewSynth.import_settings(JS.global[:_tempPreviewJson])`);
+         const data = JSON.parse(presets[name]);
+         if (data.nodes) {
+            vm.eval(`$previewSynth.import_patch(JS.global[:_tempPreviewJson])`);
+         } else {
+            console.warn("Legacy preset format is no longer supported in preview.");
+         }
        }
     }
   };

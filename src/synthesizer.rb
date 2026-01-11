@@ -4,12 +4,6 @@ require_relative "synthesizer/voice"
 
 class Synthesizer
   # Parameters
-  attr_accessor :osc_type       # "sine", "square", "sawtooth", "triangle", "noise"
-  attr_accessor :filter_type    # "lowpass", "highpass", "bandpass", "notch"
-  attr_accessor :cutoff         # Hz
-  attr_accessor :resonance      # Q factor
-  attr_accessor :attack, :decay, :sustain, :release # ADSR
-  attr_accessor :lfo_on, :lfo_waveform, :lfo_rate, :lfo_depth
   attr_accessor :custom_patch
 
   # Effect Parameters
@@ -30,7 +24,7 @@ class Synthesizer
     @reverb_mix_val = 0.3
 
     build_global_graph
-    setup_default_params
+    @custom_patch = default_patch
 
     @active_voices = {}
     @noise_buffer = create_noise_buffer
@@ -111,21 +105,25 @@ class Synthesizer
     comp
   end
 
-  def setup_default_params
-    @osc_type = "sawtooth"
-    @filter_type = "lowpass"
-    @cutoff = 2000.0
-    @resonance = 5.0
-
-    @attack = 0.1
-    @decay = 0.2
-    @sustain = 0.5
-    @release = 0.5
-
-    @lfo_on = true
-    @lfo_waveform = "sine"
-    @lfo_rate = 5.0
-    @lfo_depth = 500.0
+  def default_patch
+    {
+      nodes: [
+        { id: "vco", type: "Oscillator", freq_track: true, params: { type: "sawtooth" } },
+        { id: "vcf", type: "BiquadFilter", params: { type: "lowpass", frequency: 2000.0, q: 5.0 } },
+        { id: "vca", type: "Gain", params: { gain: 0.0 } },
+        { id: "env", type: "ADSR", params: { attack: 0.1, decay: 0.2, sustain: 0.5, release: 0.5 } },
+        { id: "lfo", type: "Oscillator", params: { type: "sine", frequency: 5.0 } },
+        { id: "lfo_gain", type: "Gain", params: { gain: 500.0 } }
+      ],
+      connections: [
+        { from: "vco", to: "vcf" },
+        { from: "vcf", to: "vca" },
+        { from: "vca", to: "out" },
+        { from: "env", to: "vca.gain" },
+        { from: "lfo", to: "lfo_gain" },
+        { from: "lfo_gain", to: "vcf.frequency" }
+      ]
+    }
   end
 
   def close
@@ -211,35 +209,6 @@ class Synthesizer
       (69 + 12 * Math.log2(freq / 440.0)).round
     end
 
-    def current_patch
-      return @custom_patch if @custom_patch
-      is_comb = @filter_type == "comb"
-      filter_node = if is_comb
-        { id: "vcf", type: "CombFilter", params: { frequency: @cutoff, q: @resonance } }
-      else
-        { id: "vcf", type: "BiquadFilter", params: { type: @filter_type, frequency: @cutoff, q: @resonance } }
-      end
-
-      {
-        nodes: [
-          { id: "vco", type: @osc_type == "noise" ? "Noise" : "Oscillator", freq_track: true, params: { type: @osc_type } },
-          filter_node,
-          { id: "vca", type: "Gain", params: { gain: 0.0 } },
-          { id: "env", type: "ADSR", params: { attack: @attack, decay: @decay, sustain: @sustain, release: @release } },
-          @lfo_on ? { id: "lfo", type: "Oscillator", params: { type: @lfo_waveform, frequency: @lfo_rate } } : nil,
-          @lfo_on ? { id: "lfo_gain", type: "Gain", params: { gain: @lfo_depth } } : nil
-        ].compact,
-        connections: [
-          { from: "vco", to: "vcf" },
-          { from: "vcf", to: "vca" },
-          { from: "vca", to: "out" },
-          { from: "env", to: "vca.gain" },
-          @lfo_on ? { from: "lfo", to: "lfo_gain" } : nil,
-          (@lfo_on && !is_comb) ? { from: "lfo_gain", to: "vcf.frequency" } : nil
-        ].compact
-      }
-    end
-
     def note_on(freq)
       return if @ctx.typeof == "undefined"
 
@@ -253,7 +222,7 @@ class Synthesizer
       end
 
       note_num = freq_to_note(freq)
-      voice = Voice.new(@ctx, note_num, current_patch, self)
+      voice = Voice.new(@ctx, note_num, @custom_patch, self)
       @active_voices[freq] = voice
       voice.start(@ctx[:currentTime].to_f)
     end
@@ -268,63 +237,11 @@ class Synthesizer
 
     def schedule_note(freq, start_time, duration, velocity: 0.8)
       note_num = freq_to_note(freq)
-      voice = Voice.new(@ctx, note_num, current_patch, self)
+      voice = Voice.new(@ctx, note_num, @custom_patch, self)
       voice.start(start_time, velocity: velocity)
       voice.stop(start_time + duration)
     end
   # --- Preset Management ---
-
-  def export_settings
-    settings = [
-      %|"osc_type": "#{@osc_type}"|,
-      %|"filter_type": "#{@filter_type}"|,
-      %|"cutoff": #{@cutoff}|,
-      %|"resonance": #{@resonance}|,
-      %|"attack": #{@attack}|,
-      %|"decay": #{@decay}|,
-      %|"sustain": #{@sustain}|,
-      %|"release": #{@release}|,
-      %|"lfo_on": #{@lfo_on}|,
-      %|"lfo_waveform": "#{@lfo_waveform}"|,
-      %|"lfo_rate": #{@lfo_rate}|,
-      %|"lfo_depth": #{@lfo_depth}|,
-      %|"delay_time": #{@delay_time_val}|,
-      %|"delay_feedback": #{@delay_feedback_val}|,
-      %|"delay_mix": #{@delay_mix_val}|,
-      %|"reverb_seconds": #{@reverb_seconds_val}|,
-      %|"reverb_mix": #{@reverb_mix_val}|
-    ]
-    "{#{settings.join(',')}}"
-  end
-
-  def import_settings(json_str)
-    @custom_patch = nil # Clear custom patch to allow legacy settings to take effect
-    data = JS.eval("return JSON.parse('#{json_str}')")
-
-    self.osc_type = data[:osc_type].to_s
-    self.filter_type = data[:filter_type].to_s
-    self.cutoff = data[:cutoff].to_f
-    self.resonance = data[:resonance].to_f
-
-    self.attack = data[:attack].to_f
-    self.decay = data[:decay].to_f
-    self.sustain = data[:sustain].to_f
-    self.release = data[:release].to_f
-
-    self.lfo_on = data[:lfo_on] == true
-    self.lfo_waveform = data[:lfo_waveform].to_s
-    self.lfo_rate = data[:lfo_rate].to_f
-    self.lfo_depth = data[:lfo_depth].to_f
-
-    if @enable_effects
-      self.delay_time = data[:delay_time].to_f
-      self.delay_feedback = data[:delay_feedback].to_f
-      self.delay_mix = data[:delay_mix].to_f
-
-      self.reverb_seconds = data[:reverb_seconds].to_f
-      self.reverb_mix = data[:reverb_mix].to_f
-    end
-  end
 
   def import_patch(json_str)
     js_obj = JS.global[:JSON].call(:parse, json_str)
@@ -335,7 +252,7 @@ class Synthesizer
     # Convert ruby hash/arrays to JSON string via JS
     # Since we don't have a direct Ruby->JSON serializer without 'json' gem,
     # we can construct a JS object and stringify it.
-    patch = current_patch
+    patch = @custom_patch
     js_obj = ruby_to_js(patch)
     JS.global[:JSON].call(:stringify, js_obj).to_s
   end
