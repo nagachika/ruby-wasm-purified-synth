@@ -5,7 +5,7 @@ require_relative "synthesizer/drum_machine"
 # a: 1st dim (2.0) - Octave
 # b: 2nd dim (3.0/2.0) - X axis
 # c: 3rd dim (5.0/4.0) - Y axis candidate
-# d: 4th dim (7.0/8.0) - Y axis candidate
+# d: 4th dim (7.0/4.0) - Y axis candidate
 # e: 5th dim (11.0/4.0) - Y axis candidate
 NoteCoord = Struct.new(:a, :b, :c, :d, :e) do
   def to_json_object
@@ -488,11 +488,11 @@ class Sequencer
   end
 
   def calculate_freq(note)
-    # F = R * (2^a) * ((3/2)^b) * ((5/4)^c) * ((7/8)^d) * ((11/4)^e)
+    # F = R * (2^a) * ((3/2)^b) * ((5/4)^c) * ((7/4)^d) * ((11/4)^e)
     f = @root_freq * (2.0 ** note.a)
     f *= (1.5 ** note.b)
     f *= (1.25 ** note.c)
-    f *= (0.875 ** note.d)
+    f *= (1.75 ** note.d)
     f *= (2.75 ** note.e)
     f
   end

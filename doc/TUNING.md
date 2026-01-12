@@ -8,14 +8,14 @@ The pitch of every note is calculated relative to a **Root Frequency** (e.g., 26
 
 A note's frequency is defined by combining five "dimensions" (prime limits):
 
-$$ F = R \times 2^a \times \left(\frac{3}{2}\right)^b \times \left(\frac{5}{4}\right)^c \times \left(\frac{7}{8}\right)^d \times \left(\frac{11}{4}\right)^e $$
+$$ F = R \times 2^a \times \left(\frac{3}{2}\right)^b \times \left(\frac{5}{4}\right)^c \times \left(\frac{7}{4}\right)^d \times \left(\frac{11}{4}\right)^e $$
 
 Where:
 *   **$R$**: Root Frequency (User configurable).
 *   **$a$**: **Octave** (1st Harmonic / 2). Shifts the pitch up/down by octaves.
 *   **$b$**: **Perfect Fifth** (3rd Harmonic / 1.5). The "X-axis" of the lattice.
 *   **$c$**: **Major Third** (5th Harmonic / 1.25). A possible "Y-axis".
-*   **$d$**: **Harmonic Seventh** (7th Harmonic / 0.875). A possible "Y-axis".
+*   **$d$**: **Harmonic Seventh** (7th Harmonic / 1.75). A possible "Y-axis".
 *   **$e$**: **11th Harmonic** (2.75). A possible "Y-axis".
 
 By combining these ratios, you can construct chords that are perfectly consonant (beat-free) in ways impossible on a standard piano.
@@ -36,7 +36,7 @@ The grid interface represents a musical space:
 
 *   **Y-Axis (Vertical)**: Represents one of the higher dimensions ($c$, $d$, or $e$), selectable via the dropdown menu.
     *   **3rd Dim (5/4)**: Classic Just Intonation Major Thirds.
-    *   **4th Dim (7/8)**: Harmonic Sevenths (Bluesy/Barbershop consonance).
+    *   **4th Dim (7/4)**: Harmonic Sevenths (Bluesy/Barbershop consonance).
     *   **5th Dim (11/4)**: 11th Harmonics (Neutral/Exotic intervals).
     *   Range: -2 to +2.
 
