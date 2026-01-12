@@ -90,7 +90,7 @@ export function setupChordView(vm) {
 
   yAxisSel.onchange = () => {
       const newDim = parseInt(yAxisSel.value);
-      
+
       // Transcribe notes to the new dimension
       currentChordNotes.forEach(note => {
           // Find existing Y value from any dimension (c, d, or e)

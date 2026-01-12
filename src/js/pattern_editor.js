@@ -7,7 +7,7 @@ export function setupPatternEditor(vm) {
   // Replace <select> with a custom list container if not already done
   // We need to do this because the original HTML has a select, but we want a list with delete buttons.
   let patternListEl = document.getElementById("pattern-list");
-  
+
   if (!patternListEl && patternSelectOriginal) {
       patternListEl = document.createElement("div");
       patternListEl.id = "pattern-list";
@@ -19,16 +19,16 @@ export function setupPatternEditor(vm) {
       patternListEl.style.flexGrow = "1";
       patternListEl.style.overflowY = "auto";
       patternListEl.style.height = "200px"; // Fallback height if flex fails (it's inside a flex column so should grow if styled right, but size=10 select has height)
-      
+
       patternSelectOriginal.replaceWith(patternListEl);
   } else if (!patternListEl) {
       // If we can't find the select or the list, create a dummy to prevent crash, though UI will be broken
       patternListEl = document.createElement("div");
   }
-  
+
   // We also need a container for the grid if not exists, to avoid clearing everything
   // In the original, container IS the grid container.
-  
+
   let currentPatternId = null;
 
   function savePatterns() {
@@ -145,7 +145,7 @@ export function setupPatternEditor(vm) {
     } catch (e) { console.error(e); return; }
 
     if (patternListEl) patternListEl.innerHTML = "";
-    
+
     // Ensure currentPatternId is valid
     if (currentPatternId && !patterns.find(p => p.id === currentPatternId)) {
         currentPatternId = patterns.length > 0 ? patterns[0].id : null;
@@ -163,14 +163,14 @@ export function setupPatternEditor(vm) {
       row.style.marginBottom = "1px";
       row.style.background = (p.id === currentPatternId) ? "#007bff" : "#333";
       row.style.cursor = "pointer";
-      
+
       const nameSpan = document.createElement("span");
       nameSpan.textContent = p.name;
       nameSpan.style.flexGrow = "1";
       nameSpan.style.whiteSpace = "nowrap";
       nameSpan.style.overflow = "hidden";
       nameSpan.style.textOverflow = "ellipsis";
-      
+
       nameSpan.onclick = () => {
           loadPattern(p.id);
       };
@@ -185,7 +185,7 @@ export function setupPatternEditor(vm) {
       delBtn.style.padding = "0 8px";
       delBtn.style.fontSize = "1.2rem";
       delBtn.title = "Delete Pattern";
-      
+
       delBtn.onclick = (e) => {
           e.stopPropagation();
           if (confirm(`Delete pattern "${p.name}"?`)) {
@@ -194,7 +194,7 @@ export function setupPatternEditor(vm) {
               updatePatternList();
           }
       };
-      
+
       row.appendChild(nameSpan);
       row.appendChild(delBtn);
       if (patternListEl) patternListEl.appendChild(row);
@@ -217,7 +217,7 @@ export function setupPatternEditor(vm) {
         if(p) name = p.name;
     } catch(e){}
     patternNameInput.value = name;
-    
+
     if (refreshList) updatePatternList();
     else renderGrid();
   }
@@ -228,7 +228,7 @@ export function setupPatternEditor(vm) {
       try {
         const newPattern = vm.eval(`$sequencer.create_pattern("${name}")`);
         savePatterns();
-        
+
         // Select the new pattern (last one)
         const json = vm.eval(`$sequencer.get_patterns_json`).toString();
         const patterns = JSON.parse(json);

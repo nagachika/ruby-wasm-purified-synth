@@ -242,7 +242,7 @@ class Sequencer
         %|"#{inst}": { #{pairs.join(',')} }|
       end
       events_json = "{ #{events_json_parts.join(',')} }"
-      
+
       %|{ "id": "#{p.id}", "name": "#{p.name}", "steps": #{p.steps}, "events": #{events_json} }|
     end
     "[#{items.join(',')}]"
@@ -251,25 +251,25 @@ class Sequencer
   def import_patterns_json(json)
     parsed = JS.global[:JSON].call(:parse, json)
     return unless parsed
-    
+
     @patterns.clear
-    
+
     length = parsed[:length].to_i
     length.times do |i|
       p_data = parsed[i]
       id = p_data[:id].to_s
       name = p_data[:name].to_s
       steps = p_data[:steps].to_i
-      
+
       events = {}
       p_events = p_data[:events]
-      
+
       # Iterate over instruments (Kick, Snare, etc.)
       # p_events is a JS Object. We can iterate keys if we use JS methods or known keys.
       ["Kick", "Snare", "HiHat", "OpenHat"].each do |inst|
         inst_events = p_events[inst]
         next if inst_events.undefined?
-        
+
         step_map = {}
         # inst_events is { "0": 0.8, "4": 0.8 }
         # We need to iterate over its keys.
@@ -284,11 +284,11 @@ class Sequencer
         end
         events[inst] = step_map
       end
-      
+
       pattern = RhythmPattern.new(id, name, steps, events)
       @patterns << pattern
     end
-    
+
     # Ensure at least one pattern exists
     if @patterns.empty?
       create_pattern("Pattern 1")
