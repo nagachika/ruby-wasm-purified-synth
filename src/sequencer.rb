@@ -268,7 +268,7 @@ class Sequencer
       # p_events is a JS Object. We can iterate keys if we use JS methods or known keys.
       ["Kick", "Snare", "HiHat", "OpenHat"].each do |inst|
         inst_events = p_events[inst]
-        next if inst_events.undefined?
+        next if inst_events.typeof == "undefined"
 
         step_map = {}
         # inst_events is { "0": 0.8, "4": 0.8 }
