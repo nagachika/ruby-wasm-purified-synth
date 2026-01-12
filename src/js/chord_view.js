@@ -89,8 +89,23 @@ export function setupChordView(vm) {
   };
 
   yAxisSel.onchange = () => {
-      // Keep only root note (0,0,0,0,0) with potential octave shift
-      currentChordNotes = currentChordNotes.filter(n => n.b === 0 && n.c === 0 && n.d === 0 && n.e === 0);
+      const newDim = parseInt(yAxisSel.value);
+      
+      // Transcribe notes to the new dimension
+      currentChordNotes.forEach(note => {
+          // Find existing Y value from any dimension (c, d, or e)
+          // Since the editor operates on a 2D slice, a note should typically strictly belong to one Y-dimension or be 0.
+          let yVal = 0;
+          if (note.c !== 0) { yVal = note.c; note.c = 0; }
+          else if (note.d !== 0) { yVal = note.d; note.d = 0; }
+          else if (note.e !== 0) { yVal = note.e; note.e = 0; }
+
+          // Apply to new dimension
+          if (newDim === 3) note.c = yVal;
+          else if (newDim === 4) note.d = yVal;
+          else if (newDim === 5) note.e = yVal;
+      });
+
       renderChordEditor(vm);
   };
 
