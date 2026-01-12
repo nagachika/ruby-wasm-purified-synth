@@ -188,8 +188,8 @@ class Sequencer
 
   # --- Pattern Management ---
 
-  def create_pattern(name = "New Pattern", steps = 16)
-    id = "p#{@patterns.length + 1}_#{Time.now.to_i}"
+  def create_pattern(name = "New Pattern", steps = 16, id = nil)
+    id ||= "p#{@patterns.length + 1}_#{Time.now.to_i}"
     # Initialize with velocity hash for each instrument
     events = {
       "Kick" => {}, "Snare" => {}, "HiHat" => {}, "OpenHat" => {}
@@ -197,6 +197,20 @@ class Sequencer
     pattern = RhythmPattern.new(id, name, steps, events)
     @patterns << pattern
     pattern
+  end
+
+  def delete_pattern(id)
+    @patterns.reject! { |p| p.id == id }
+    # Also remove references from blocks?
+    @tracks.each do |t|
+      next unless t.type == :rhythmic
+      t.blocks.each do |b|
+        if b.pattern_id == id
+          # Reset to first available or nil
+          b.pattern_id = @patterns.first&.id
+        end
+      end
+    end
   end
 
   def get_pattern(id)
@@ -213,6 +227,72 @@ class Sequencer
       %|{ "id": "#{p.id}", "name": "#{p.name}", "steps": #{p.steps} }|
     end
     "[#{items.join(',')}]"
+  end
+
+  def export_patterns_json
+    items = @patterns.map do |p|
+      # events is { "Kick" => { 0 => 0.8, 4 => 0.8 }, ... }
+      events_json_parts = p.events.map do |inst, data|
+        steps_map = data.is_a?(Hash) ? data : {}
+        # If legacy data (Array), convert to Hash
+        if data.is_a?(Array)
+          data.each { |s| steps_map[s] = 0.8 }
+        end
+        pairs = steps_map.map { |k, v| %|"#{k}": #{v}| }
+        %|"#{inst}": { #{pairs.join(',')} }|
+      end
+      events_json = "{ #{events_json_parts.join(',')} }"
+      
+      %|{ "id": "#{p.id}", "name": "#{p.name}", "steps": #{p.steps}, "events": #{events_json} }|
+    end
+    "[#{items.join(',')}]"
+  end
+
+  def import_patterns_json(json)
+    parsed = JS.global[:JSON].call(:parse, json)
+    return unless parsed
+    
+    @patterns.clear
+    
+    length = parsed[:length].to_i
+    length.times do |i|
+      p_data = parsed[i]
+      id = p_data[:id].to_s
+      name = p_data[:name].to_s
+      steps = p_data[:steps].to_i
+      
+      events = {}
+      p_events = p_data[:events]
+      
+      # Iterate over instruments (Kick, Snare, etc.)
+      # p_events is a JS Object. We can iterate keys if we use JS methods or known keys.
+      ["Kick", "Snare", "HiHat", "OpenHat"].each do |inst|
+        inst_events = p_events[inst]
+        next if inst_events.undefined?
+        
+        step_map = {}
+        # inst_events is { "0": 0.8, "4": 0.8 }
+        # We need to iterate over its keys.
+        # JS::Object doesn't iterate easily in Ruby without helper or keys.
+        # Use Object.keys
+        keys = JS.global[:Object].call(:keys, inst_events)
+        k_len = keys[:length].to_i
+        k_len.times do |ki|
+          step_key = keys[ki].to_s
+          val = inst_events[step_key].to_f
+          step_map[step_key.to_i] = val
+        end
+        events[inst] = step_map
+      end
+      
+      pattern = RhythmPattern.new(id, name, steps, events)
+      @patterns << pattern
+    end
+    
+    # Ensure at least one pattern exists
+    if @patterns.empty?
+      create_pattern("Pattern 1")
+    end
   end
 
   # --- Block Management ---
