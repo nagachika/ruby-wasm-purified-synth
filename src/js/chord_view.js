@@ -14,6 +14,29 @@ export function setupChordView(vm) {
   const editorGrid = document.getElementById("chord-editor-grid");
   const yAxisSel = document.getElementById("chord-y-axis");
   const previewSel = document.getElementById("chord-preview-preset");
+  const previewBtn = document.getElementById("preview-chord-btn");
+
+  // Prevent editor keybinds when typing name
+  nameInput.addEventListener("keydown", (e) => {
+    e.stopPropagation();
+  });
+
+  // Preview Button Logic
+  previewBtn.onclick = () => {
+    if (currentChordNotes.length === 0) return;
+    const now = window.audioCtx.currentTime;
+    // Play all notes in chord simultaneously
+    currentChordNotes.forEach(note => {
+        try {
+          const freqStr = vm.eval(`
+            n = NoteCoord.new(${note.a}, ${note.b}, ${note.c}, ${note.d}, ${note.e})
+            $sequencer.calculate_freq(n)
+          `).toString();
+          const freq = parseFloat(freqStr);
+          vm.eval(`$previewSynth.schedule_note(${freq}, ${now}, 0.5)`);
+        } catch(e) { console.error(e); }
+    });
+  };
 
   // Populate Preview Presets (sync with main presets)
   function updatePreviewPresets() {
@@ -58,7 +81,7 @@ export function setupChordView(vm) {
     if (currentChordNotes.length === 0) return alert("Chord is empty.");
 
     updateChord(name, {
-        notes: currentChordNotes,
+        notes: JSON.parse(JSON.stringify(currentChordNotes)),
         dimension: parseInt(yAxisSel.value)
     });
     renderChordList(vm);

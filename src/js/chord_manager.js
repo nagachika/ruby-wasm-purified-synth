@@ -18,7 +18,7 @@ export function saveChords() {
 }
 
 export function updateChord(name, data) {
-    chords[name] = data;
+    chords[name] = JSON.parse(JSON.stringify(data));
     saveChords();
 }
 
