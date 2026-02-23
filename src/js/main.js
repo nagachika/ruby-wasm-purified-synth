@@ -1,4 +1,4 @@
-import { DefaultRubyVM } from "https://cdn.jsdelivr.net/npm/@ruby/wasm-wasi@2.7.1/dist/esm/browser.js";
+import { DefaultRubyVM } from "https://cdn.jsdelivr.net/npm/@ruby/wasm-wasi@2.8.1/dist/esm/browser.js";
 import { loadChords } from "./chord_manager.js";
 import { setupChordView } from "./chord_view.js";
 import { setupPresets } from "./presets.js";
@@ -49,7 +49,7 @@ function setupTabs() {
 
 const main = async () => {
   // Pre-load Ruby VM
-  const response = await fetch("https://cdn.jsdelivr.net/npm/@ruby/3.3-wasm-wasi@2.7.1/dist/ruby.wasm");
+  const response = await fetch("https://cdn.jsdelivr.net/npm/@ruby/3.3-wasm-wasi@2.8.1/dist/ruby+stdlib.wasm");
   const buffer = await response.arrayBuffer();
   const module = await WebAssembly.compile(buffer);
   const { vm } = await DefaultRubyVM(module);

@@ -1,4 +1,5 @@
 require "js"
+require "json"
 require_relative "synthesizer/drum_machine"
 
 # Structure to hold lattice coordinates
@@ -223,64 +224,58 @@ class Sequencer
   end
 
   def get_patterns_json
-    items = @patterns.map do |p|
-      %|{ "id": "#{p.id}", "name": "#{p.name}", "steps": #{p.steps} }|
-    end
-    "[#{items.join(',')}]"
+    JSON.generate(@patterns.map { |p| { id: p.id, name: p.name, steps: p.steps } })
   end
 
   def export_patterns_json
+    # Clean up events data before exporting to ensure it's valid JSON
     items = @patterns.map do |p|
-      # events is { "Kick" => { 0 => 0.8, 4 => 0.8 }, ... }
-      events_json_parts = p.events.map do |inst, data|
+      clean_events = {}
+      p.events.each do |inst, data|
         steps_map = data.is_a?(Hash) ? data : {}
-        # If legacy data (Array), convert to Hash
         if data.is_a?(Array)
           data.each { |s| steps_map[s] = 0.8 }
         end
-        pairs = steps_map.map { |k, v| %|"#{k}": #{v}| }
-        %|"#{inst}": { #{pairs.join(',')} }|
+        clean_events[inst] = steps_map
       end
-      events_json = "{ #{events_json_parts.join(',')} }"
 
-      %|{ "id": "#{p.id}", "name": "#{p.name}", "steps": #{p.steps}, "events": #{events_json} }|
+      {
+        id: p.id,
+        name: p.name,
+        steps: p.steps,
+        events: clean_events
+      }
     end
-    "[#{items.join(',')}]"
+    JSON.generate(items)
   end
 
   def import_patterns_json(json)
-    parsed = JS.global[:JSON].call(:parse, json)
-    return unless parsed
+    parsed = JSON.parse(json.to_s, symbolize_names: true) rescue nil
+    return unless parsed.is_a?(Array)
 
     @patterns.clear
 
-    length = parsed[:length].to_i
-    length.times do |i|
-      p_data = parsed[i]
+    parsed.each do |p_data|
       id = p_data[:id].to_s
       name = p_data[:name].to_s
       steps = p_data[:steps].to_i
 
       events = {}
-      p_events = p_data[:events]
+      p_events = p_data[:events] || {}
 
       # Iterate over instruments (Kick, Snare, etc.)
-      # p_events is a JS Object. We can iterate keys if we use JS methods or known keys.
       ["Kick", "Snare", "HiHat", "OpenHat"].each do |inst|
-        inst_events = p_events[inst]
-        next if inst_events.typeof == "undefined"
+        inst_events = p_events[inst.to_sym]
+        next unless inst_events
 
         step_map = {}
-        # inst_events is { "0": 0.8, "4": 0.8 }
-        # We need to iterate over its keys.
-        # JS::Object doesn't iterate easily in Ruby without helper or keys.
-        # Use Object.keys
-        keys = JS.global[:Object].call(:keys, inst_events)
-        k_len = keys[:length].to_i
-        k_len.times do |ki|
-          step_key = keys[ki].to_s
-          val = inst_events[step_key].to_f
-          step_map[step_key.to_i] = val
+        if inst_events.is_a?(Hash)
+          inst_events.each do |step_key, val|
+            step_map[step_key.to_s.to_i] = val.to_f
+          end
+        elsif inst_events.is_a?(Array)
+          # Legacy data support (Array of step indices)
+          inst_events.each { |s| step_map[s.to_i] = 0.8 }
         end
         events[inst] = step_map
       end
@@ -328,10 +323,7 @@ class Sequencer
     block = track.blocks.find { |b| b.start_step == start_step }
     return "[]" unless block
 
-    json_items = block.notes.map do |n|
-      %|{ "a": #{n[:a]}, "b": #{n[:b]}, "c": #{n[:c]}, "d": #{n[:d]}, "e": #{n[:e]} }|
-    end
-    "[#{json_items.join(',')}]"
+    JSON.generate(block.notes.map(&:to_json_object))
   end
 
   def update_block_notes(track_index, start_step, notes_json_str)
@@ -344,10 +336,10 @@ class Sequencer
     return unless block
 
     block.notes.clear
-    js_notes = JS.global[:JSON].call(:parse, notes_json_str)
-    len = js_notes[:length].to_i
-    len.times do |i|
-       n = js_notes[i]
+    notes = JSON.parse(notes_json_str.to_s, symbolize_names: true) rescue []
+    return unless notes.is_a?(Array)
+
+    notes.each do |n|
        new_note = NoteCoord.new(n[:a].to_f, n[:b].to_f, n[:c].to_f, n[:d].to_f, n[:e].to_f)
        block.notes << new_note
     end
@@ -392,20 +384,16 @@ class Sequencer
     pattern = get_pattern(pattern_id)
     return "{}" unless pattern
 
-    # Build JSON for events
-    json_parts = pattern.events.map do |inst, data|
+    # Build clean hash for JSON
+    clean_events = {}
+    pattern.events.each do |inst, data|
       steps_map = data.is_a?(Hash) ? data : {}
-
-      # If legacy data (Array), convert to Hash
       if data.is_a?(Array)
         data.each { |s| steps_map[s] = 0.8 }
       end
-
-      # steps_map is { index => velocity }
-      pairs = steps_map.map { |k, v| %|"#{k}": #{v}| }
-      %|"#{inst}": { #{pairs.join(',')} }|
+      clean_events[inst] = steps_map
     end
-    "{#{json_parts.join(',')}}"
+    JSON.generate(clean_events)
   end
 
   # ... (Helper methods for Lattice Editor omitted as they are specific to melodic blocks) ...
@@ -414,14 +402,17 @@ class Sequencer
     track = @tracks[track_index]
     return "[]" unless track
 
-    items = track.blocks.map do |b|
-       extra = ""
-       if track.type == :rhythmic
-         extra = %|, "pattern_id": "#{b.pattern_id}"|
-       end
-       %|{ "start": #{b.start_step}, "length": #{b.length}, "notes_count": #{b.notes.length}, "type": "#{track.type}"#{extra} }|
+    data = track.blocks.map do |b|
+      res = {
+        start: b.start_step,
+        length: b.length,
+        notes_count: b.notes.length,
+        type: track.type
+      }
+      res[:pattern_id] = b.pattern_id if track.type == :rhythmic
+      res
     end
-    "[#{items.join(',')}]"
+    JSON.generate(data)
   end
 
   # --- Playback ---

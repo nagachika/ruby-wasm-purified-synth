@@ -1,4 +1,5 @@
 require "js"
+require "json"
 require_relative "synthesizer/nodes"
 require_relative "synthesizer/voice"
 
@@ -244,68 +245,10 @@ class Synthesizer
   # --- Preset Management ---
 
   def import_patch(json_str)
-    js_obj = JS.global[:JSON].call(:parse, json_str)
-    @custom_patch = js_to_ruby(js_obj)
+    @custom_patch = JSON.parse(json_str.to_s, symbolize_names: true)
   end
 
   def export_patch
-    # Convert ruby hash/arrays to JSON string via JS
-    # Since we don't have a direct Ruby->JSON serializer without 'json' gem,
-    # we can construct a JS object and stringify it.
-    patch = @custom_patch
-    js_obj = ruby_to_js(patch)
-    JS.global[:JSON].call(:stringify, js_obj).to_s
-  end
-
-  private
-
-  def ruby_to_js(obj)
-    if obj.is_a?(Hash)
-      js_obj = JS.global[:Object].new
-      obj.each do |k, v|
-        js_obj[k.to_s] = ruby_to_js(v)
-      end
-      js_obj
-    elsif obj.is_a?(Array)
-      js_arr = JS.global[:Array].new
-      obj.each_with_index do |v, i|
-        js_arr[i] = ruby_to_js(v)
-      end
-      js_arr
-    else
-      # Primitive
-      obj
-    end
-  end
-
-  def js_to_ruby(obj)
-    return nil if obj.typeof == "undefined"
-    return nil if JS.global.call(:String, obj).to_s == "null"
-
-    case obj.typeof
-    when "object"
-      if obj.is_a?(JS::Object) && obj[:length].typeof == "number"
-        # Array
-        (0...obj[:length].to_i).map { |i| js_to_ruby(obj[i]) }
-      else
-        # Object/Hash
-        hash = {}
-        keys = JS.global[:Object].call(:keys, obj)
-        (0...keys[:length].to_i).each do |i|
-          key = keys[i]
-          str_key = key.to_s
-          hash[str_key.to_sym] = js_to_ruby(obj[str_key])
-        end
-        hash
-      end
-    when "boolean"
-      obj.to_s == "true"
-    when "number"
-      obj.to_f
-    when "string"
-      obj.to_s
-    else
-      obj
-    end
+    JSON.generate(@custom_patch)
   end
 end
