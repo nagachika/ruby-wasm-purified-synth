@@ -57,6 +57,10 @@ const main = async () => {
   window.rubyVM = vm;
   console.log("Ruby VM loaded");
 
+  // Enable the start button and update text now that VM is ready
+  startBtn.disabled = false;
+  startBtn.textContent = "Click to Start";
+
   // Ensure JS module is loaded
   vm.eval("require 'js'");
 
