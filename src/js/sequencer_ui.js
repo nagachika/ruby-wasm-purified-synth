@@ -41,7 +41,15 @@ export function setupSequencer(App) {
   App.queuePlayheadUpdates = (json) => {
     try {
       const updates = JSON.parse(json);
-      playheadQueue.push(...updates);
+      updates.forEach(upd => {
+        if (upd.sequencer === "$sequencer") {
+           window._currentSequencerStep = upd.step;
+           window._lastSequencerTime = upd.time;
+        } else if (upd.sequencer === "$patternSequencer") {
+           window._currentPreviewStep = upd.step;
+           window._lastPreviewTime = upd.time;
+        }
+      });
     } catch(e) { console.error("Error parsing playhead updates:", e); }
   };
 
@@ -63,21 +71,34 @@ export function setupSequencer(App) {
     }
   }
 
+  function updatePlayBtnUI() {
+    if (!playBtn) return;
+    try {
+      const isPlayingVal = App.call("$sequencer", "is_playing");
+      const isPlaying = isPlayingVal && isPlayingVal.toString() === "true";
+      if (isPlaying) {
+        playBtn.innerHTML = '<span class="material-icons">stop</span> Stop';
+        playBtn.style.background = "#dc3545";
+      } else {
+        playBtn.innerHTML = '<span class="material-icons">play_arrow</span> Play';
+        playBtn.style.background = "#007bff";
+      }
+    } catch (e) {}
+  }
+
   function animate() {
     requestAnimationFrame(animate);
     if (!App.audioCtx || App.audioCtx.state === 'suspended') return;
 
+    updatePlayBtnUI();
+
     const now = App.audioCtx.currentTime;
-    let currentStep = -1;
-
-    // Process queue up to current audio time
-    while (playheadQueue.length > 0 && playheadQueue[0].time <= now) {
-      currentStep = playheadQueue.shift().step;
-    }
-
-    if (currentStep !== -1 && currentStep !== lastProcessedStep) {
-      updatePlayheadVisuals(currentStep);
-      lastProcessedStep = currentStep;
+    
+    // Process main sequencer visual update
+    if (window._currentSequencerStep !== undefined && window._currentSequencerStep !== lastProcessedStep) {
+        // We check time to be more precise if needed, but for now step is enough
+        updatePlayheadVisuals(window._currentSequencerStep);
+        lastProcessedStep = window._currentSequencerStep;
     }
   }
   requestAnimationFrame(animate);
@@ -710,12 +731,8 @@ export function setupSequencer(App) {
       const isPlaying = isPlayingVal && isPlayingVal.toString() === "true";
       if (isPlaying) {
         App.call("$sequencer", "stop");
-        playBtn.innerHTML = '<span class="material-icons">play_arrow</span> Play';
-        playBtn.style.background = "#007bff";
       } else {
         App.call("$sequencer", "start");
-        playBtn.innerHTML = '<span class="material-icons">stop</span> Stop';
-        playBtn.style.background = "#dc3545";
       }
     } catch (e) { console.error("Sequencer play/stop UI error:", e); }
   };

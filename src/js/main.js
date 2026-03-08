@@ -180,8 +180,14 @@ const main = async () => {
     loadScript('/src/js_bridge.rb');
 
     // Init Sequencer & Synth
-    App.eval("$sequencer = Sequencer.new(JS.eval('return window.App.audioCtx;'))");
+    App.eval("$sequencer = Sequencer.new(JS.eval('return window.App.audioCtx;'), name: '$sequencer')");
     App.eval("$synth = $sequencer.current_track.synth");
+
+    // Pattern Preview Sequencer
+    App.eval("$patternSequencer = Sequencer.new(JS.eval('return window.App.audioCtx;'), name: '$patternSequencer')");
+    App.eval("$patternSequencer.add_rhythm_track");
+    App.eval("$patternSequencer.set_patterns_reference($sequencer.patterns)");
+    App.eval("$patternSequencer.set_total_bars(1)"); // Preview is 1 bar (32 steps)
 
     // Create a standalone synth for Chord Preview
     App.eval("$previewSynth = Synthesizer.new(JS.eval('return window.App.audioCtx;'))");

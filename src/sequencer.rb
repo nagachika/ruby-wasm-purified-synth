@@ -94,10 +94,11 @@ class Sequencer
   attr_accessor :swing_amount # 0.0 to 1.0 (0 = straight, >0 = swing)
 
   attr_reader :is_playing, :current_step, :tracks, :current_track_index, :total_steps
-  attr_reader :patterns
+  attr_reader :patterns, :name
 
-  def initialize(ctx)
+  def initialize(ctx, name: "$sequencer")
     @ctx = ctx
+    @name = name # The Ruby global variable name or identifier
     @bpm = 120
     @root_freq = 261.63 # C4
     @swing_amount = 0.0
@@ -119,11 +120,12 @@ class Sequencer
     @tracks = []
     @patterns = []
 
-    # Initialize one melody track
-    add_track
-
-    # Initialize default pattern
-    create_pattern("Pattern 1")
+    # Initialize one melody track (optional for pattern sequencer)
+    # We only add it for the main sequencer for now
+    if @name == "$sequencer"
+      add_track
+      create_pattern("Pattern 1")
+    end
 
     @is_playing = false
     @current_step = 0
@@ -267,10 +269,10 @@ class Sequencer
   def select_track(index)
     if index >= 0 && index < @tracks.length
       @current_track_index = index
-      $synth = current_track.synth
+      $synth = current_track.synth if @name == "$sequencer"
       # If rhythm track, $synth is DrumMachine, which might not match Synthesizer interface perfectly for UI
       # We will handle this in UI
-      JS.global[:synthAnalyser] = current_track.synth.analyser_node.native_node
+      JS.global[:synthAnalyser] = current_track.synth.analyser_node.native_node if @name == "$sequencer"
     end
   end
 
@@ -312,6 +314,16 @@ class Sequencer
 
   def get_pattern(id)
     @patterns.find { |p| p.id == id }
+  end
+
+  # Internal helper for sharing between instances
+  def get_pattern_by_id_internal(id)
+    get_pattern(id)
+  end
+
+  # For shared patterns, we will just use the global $sequencer's patterns if this is a preview sequencer
+  def set_patterns_reference(patterns)
+    @patterns = patterns
   end
 
   def get_pattern_name(id)
@@ -423,7 +435,6 @@ class Sequencer
   end
 
   def update_block_notes(track_index, start_step, notes_json_str)
-    # ... (same as before, mostly for melodic) ...
     track = @tracks[track_index]
     return unless track
     return if track.type == :rhythmic # Rhythm blocks don't store notes this way
@@ -494,8 +505,6 @@ class Sequencer
     JSON.generate(clean_events)
   end
 
-  # ... (Helper methods for Lattice Editor omitted as they are specific to melodic blocks) ...
-
   def get_track_blocks_json(track_index)
     track = @tracks[track_index]
     return "[]" unless track
@@ -521,10 +530,12 @@ class Sequencer
     @current_step = 0
     @next_note_time = @ctx[:currentTime].to_f + 0.1
 
+    # Use unique interval name based on instance name
+    interval_name = "seqInterval_#{@name.gsub('$', '')}"
     code = <<~JAVASCRIPT
-      window.App.seqInterval = setInterval(() => {
+      window.App["#{interval_name}"] = setInterval(() => {
         if (window.App && window.App.vm) {
-          window.App.vm.eval("$sequencer.scheduler");
+          window.App.vm.eval("#{name}.scheduler");
         }
       }, #{@lookahead_ms});
     JAVASCRIPT
@@ -533,14 +544,15 @@ class Sequencer
 
   def stop
     @is_playing = false
-    JS.eval("clearInterval(window.App.seqInterval); delete window.App.seqInterval;")
+    interval_name = "seqInterval_#{@name.gsub('$', '')}"
+    JS.eval("clearInterval(window.App['#{interval_name}']); delete window.App['#{interval_name}'];")
   end
 
   def scheduler
     updates = []
     while @next_note_time < @ctx[:currentTime].to_f + @schedule_ahead_time
       schedule_step(@current_step, @next_note_time)
-      updates << { step: @current_step, time: @next_note_time }
+      updates << { step: @current_step, time: @next_note_time, sequencer: @name }
       advance_step
     end
 

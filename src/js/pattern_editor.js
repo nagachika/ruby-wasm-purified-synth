@@ -3,8 +3,87 @@ export function setupPatternEditor(App) {
   const patternListEl = document.getElementById("pattern-list");
   const newPatternBtn = document.getElementById("new-pattern-btn");
   const patternNameInput = document.getElementById("pattern-name");
+  const patternPlayBtn = document.getElementById("pattern-play-btn");
+  const patternBpmInput = document.getElementById("pattern-bpm");
+  const patternBpmDisplay = document.getElementById("pattern-val-bpm");
 
   let currentPatternId = null;
+  let currentPlayheadStep = -1;
+
+  function updatePreviewUI() {
+      if (!patternPlayBtn) return;
+      try {
+          // Sync BPM display (Always use $patternSequencer's BPM)
+          const bpmVal = App.call("$patternSequencer", "bpm").toString();
+          if (patternBpmInput && document.activeElement !== patternBpmInput) {
+              patternBpmInput.value = bpmVal;
+              if (patternBpmDisplay) patternBpmDisplay.textContent = bpmVal;
+          }
+
+          const isPlayingVal = App.call("$patternSequencer", "is_playing");
+          const isPlaying = isPlayingVal && isPlayingVal.toString() === "true";
+
+          if (isPlaying) {
+              patternPlayBtn.innerHTML = '<span class="material-icons" style="font-size: 1.2rem; margin-right: 4px;">stop</span> Stop';
+              patternPlayBtn.style.background = "#dc3545";
+          } else {
+              patternPlayBtn.innerHTML = '<span class="material-icons" style="font-size: 1.2rem; margin-right: 4px;">play_arrow</span> Preview';
+              patternPlayBtn.style.background = "#28a745";
+          }
+      } catch (e) {
+          console.error("Failed to update preview UI", e);
+      }
+  }
+
+  function updateHighlight() {
+      if (!container || !currentPatternId) return;
+
+      const isPlayingVal = App.call("$patternSequencer", "is_playing");
+      const isPlaying = isPlayingVal && isPlayingVal.toString() === "true";
+
+      let seqStep = -1;
+      if (isPlaying) {
+          seqStep = window._currentPreviewStep !== undefined ? window._currentPreviewStep : -1;
+      } else {
+          // If not previewing, we could optionally highlight the main sequencer's position if appropriate,
+          // but usually for a pattern editor we only want to highlight when previewing that pattern.
+          seqStep = -1;
+      }
+
+      // 16 steps pattern
+      const patternStep = Math.floor((seqStep % 32) / 2); // 32 sub-steps = 16 steps
+
+      if (patternStep === currentPlayheadStep) return;
+      currentPlayheadStep = patternStep;
+
+      const cells = container.querySelectorAll(".step-cell");
+      cells.forEach(cell => {
+          const stepIdx = parseInt(cell.dataset.step);
+          if (stepIdx === patternStep) {
+              cell.style.borderColor = "#fff";
+              cell.style.boxShadow = "inset 0 0 5px #fff";
+          } else {
+              cell.style.borderColor = "#555";
+              cell.style.boxShadow = "none";
+          }
+      });
+
+      const headers = container.querySelectorAll(".step-header");
+      headers.forEach(h => {
+          const stepIdx = parseInt(h.dataset.step);
+          h.style.color = (stepIdx === patternStep) ? "#fff" : "#888";
+          h.style.fontWeight = (stepIdx === patternStep || stepIdx % 4 === 0) ? "bold" : "normal";
+      });
+  }
+
+  function animate() {
+      updateHighlight();
+      requestAnimationFrame(animate);
+  }
+  requestAnimationFrame(animate);
+
+  // Poll for UI updates (e.g. when sequencer stops)
+  setInterval(updatePreviewUI, 200);
 
   function savePatterns() {
       try {
@@ -58,6 +137,8 @@ export function setupPatternEditor(App) {
     table.appendChild(document.createElement("div")); // Empty corner
     for (let i = 0; i < steps; i++) {
       const cell = document.createElement("div");
+      cell.className = "step-header";
+      cell.dataset.step = i;
       cell.textContent = i + 1;
       cell.style.textAlign = "center";
       cell.style.fontSize = "0.7rem";
@@ -81,6 +162,8 @@ export function setupPatternEditor(App) {
 
       for (let i = 0; i < steps; i++) {
         const cell = document.createElement("div");
+        cell.className = "step-cell";
+        cell.dataset.step = i;
         cell.style.height = "30px";
 
         const isActive = activeSteps.hasOwnProperty(i.toString());
@@ -93,6 +176,7 @@ export function setupPatternEditor(App) {
         cell.style.borderRadius = "2px";
         cell.style.cursor = "pointer";
         cell.style.border = "1px solid #555";
+        cell.style.transition = "border-color 0.1s, box-shadow 0.1s";
 
         if (isActive) {
              cell.title = `Velocity: ${Math.round(velocity * 127)}`;
@@ -223,6 +307,35 @@ export function setupPatternEditor(App) {
       savePatterns();
       updatePatternList();
   };
+
+  if (patternPlayBtn) {
+      patternPlayBtn.onclick = () => {
+          if (!currentPatternId) return;
+          try {
+              const isPlayingVal = App.call("$patternSequencer", "is_playing");
+              const isPlaying = isPlayingVal && isPlayingVal.toString() === "true";
+              if (isPlaying) {
+                  App.call("$patternSequencer", "stop");
+              } else {
+                  // Setup $patternSequencer to play the current pattern on track 0 (rhythm track)
+                  App.call("$patternSequencer", "add_or_update_block", 0, 0, 32, currentPatternId);
+                  App.call("$patternSequencer", "start");
+              }
+          } catch (e) {
+              console.error("Failed to toggle pattern preview", e);
+          }
+      };
+  }
+
+  if (patternBpmInput) {
+      patternBpmInput.oninput = (e) => {
+          const val = parseInt(e.target.value);
+          if (patternBpmDisplay) patternBpmDisplay.textContent = val;
+          try {
+              App.call("$patternSequencer", "set_bpm", val);
+          } catch (e) {}
+      };
+  }
 
   // Initial load
   loadPatterns();

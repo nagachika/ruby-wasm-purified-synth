@@ -4,9 +4,10 @@ require "json"
 # Arguments are passed as a JSON string to ensure safe type conversion.
 def js_bridge_dispatch(target_name, method_name, json_args)
   target = case target_name
-           when '$sequencer'    then $sequencer
-           when '$synth'        then $synth
-           when '$previewSynth'  then $previewSynth
+           when '$sequencer'        then $sequencer
+           when '$patternSequencer' then $patternSequencer
+           when '$synth'            then $synth
+           when '$previewSynth'     then $previewSynth
            else
              puts "[Bridge Error] Unknown target: #{target_name}"
              return nil
