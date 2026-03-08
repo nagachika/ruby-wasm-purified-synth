@@ -28,12 +28,9 @@ export function setupChordView(App) {
     // Play all notes in chord simultaneously
     currentChordNotes.forEach(note => {
         try {
-          const freqStr = App.eval(`
-            n = NoteCoord.new(${note.a}, ${note.b}, ${note.c}, ${note.d}, ${note.e})
-            $sequencer.calculate_freq(n)
-          `, "ChordPreview").toString();
-          const freq = parseFloat(freqStr);
-          App.eval(`$previewSynth.schedule_note(${freq}, ${now}, 0.5)`, "ChordPreviewPlay");
+          const freqVal = App.call("$sequencer", "calculate_freq_from_coords", note.a, note.b, note.c, note.d, note.e);
+          const freq = parseFloat(freqVal.toString());
+          App.call("$previewSynth", "schedule_note", freq, now, 0.5);
         } catch(e) { console.error(e); }
     });
   };
@@ -57,10 +54,10 @@ export function setupChordView(App) {
     if (name) {
        const presets = getPresets();
        if (presets[name]) {
-         window._tempPreviewJson = presets[name];
-         const data = JSON.parse(presets[name]);
+         const json = presets[name];
+         const data = JSON.parse(json);
          if (data.nodes) {
-            App.eval(`$previewSynth.import_patch(JS.global[:_tempPreviewJson])`, "PreviewSynthImport");
+            App.call("$previewSynth", "import_patch", json);
          } else {
             console.warn("Legacy preset format is no longer supported in preview.");
          }
@@ -217,13 +214,10 @@ export function setupChordView(App) {
 
   function playPreviewNote(App, noteObj) {
       try {
-          const freqStr = App.eval(`
-            n = NoteCoord.new(${noteObj.a}, ${noteObj.b}, ${noteObj.c}, ${noteObj.d}, ${noteObj.e})
-            $sequencer.calculate_freq(n)
-          `, "PlayPreviewNote").toString();
-          const freq = parseFloat(freqStr);
+          const freqVal = App.call("$sequencer", "calculate_freq_from_coords", noteObj.a, noteObj.b, noteObj.c, noteObj.d, noteObj.e);
+          const freq = parseFloat(freqVal.toString());
           const now = App.audioCtx.currentTime;
-          App.eval(`$previewSynth.schedule_note(${freq}, ${now}, 0.3)`, "PlayPreviewNoteSchedule");
+          App.call("$previewSynth", "schedule_note", freq, now, 0.3);
       } catch(e) { console.error(e); }
   }
 

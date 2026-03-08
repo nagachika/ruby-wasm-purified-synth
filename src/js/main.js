@@ -18,17 +18,27 @@ window.App = {
   // Safe Ruby evaluation with centralized error handling
   eval(code, context = "Main") {
     try {
-      return this.vm.eval(code);
+      const result = this.vm.eval(code);
+      return result;
     } catch (e) {
       console.error(`[Ruby Error in ${context}]:`, e);
-      // Optional: Show user-friendly notification if needed
+      if (e.stack) console.error(e.stack);
       return null;
     }
+  },
+
+  // Safe Method Call via JSON Facade
+  call(target, method, ...args) {
+    const jsonArgs = JSON.stringify(args);
+    window._tempJsonArgs = jsonArgs;
+    const code = `js_bridge_dispatch('${target}', '${method}', JS.global[:_tempJsonArgs].to_s)`;
+    const result = this.eval(code, `Call(${target}.${method})`);
+    delete window._tempJsonArgs;
+    return result;
   }
 };
 
-function setupTabs() {
-  const tabSynth = document.getElementById("tab-synth");
+function setupTabs() {  const tabSynth = document.getElementById("tab-synth");
   const tabSeq = document.getElementById("tab-seq");
   const tabChord = document.getElementById("tab-chord");
   const tabPattern = document.getElementById("tab-pattern");
@@ -98,7 +108,8 @@ const main = async () => {
       "src/synthesizer/voice.rb",
       "src/synthesizer.rb",
       "src/synthesizer/drum_machine.rb",
-      "src/sequencer.rb"
+      "src/sequencer.rb",
+      "src/js_bridge.rb"
     ];
 
     for (const file of rubyFiles) {
@@ -118,24 +129,28 @@ const main = async () => {
       // Ensure directory exists
       const dir = vfsPath.substring(0, vfsPath.lastIndexOf('/'));
       if (dir) {
+        window._tempDir = dir;
         App.eval(`
-          parts = '${dir}'.split('/').reject(&:empty?)
+          parts = JS.global[:_tempDir].to_s.split('/').reject(&:empty?)
           current = ''
           parts.each do |part|
             current = current + '/' + part
             Dir.mkdir(current) unless Dir.exist?(current)
           end
         `, "DirSetup");
+        delete window._tempDir;
       }
 
       // Write file
-      App.eval(`File.write('${vfsPath}', JS.global[:_rubyFileContent])`, "FileWrite");
+      window._tempPath = vfsPath;
+      App.eval(`File.write(JS.global[:_tempPath].to_s, JS.global[:_rubyFileContent])`, "FileWrite");
 
       // Verify write
-      const exists = App.eval(`File.exist?('${vfsPath}')`, "FileExistCheck").toJS();
+      const exists = App.eval(`File.exist?(JS.global[:_tempPath].to_s)`, "FileExistCheck").toJS();
       if (!exists) {
         console.error(`Failed to write ${vfsPath}`);
       }
+      delete window._tempPath;
     }
 
     // Clean up
@@ -146,20 +161,23 @@ const main = async () => {
 
     // Load entry points
     const loadScript = (script) => {
+      window._tempScript = script;
       App.eval(`
         begin
-          require '${script}'
+          require JS.global[:_tempScript].to_s
         rescue LoadError => e
-          puts "Error loading ${script}: #{e.message}"
+          puts "Error loading #{JS.global[:_tempScript].to_s}: #{e.message}"
           puts e.backtrace
           raise e
         end
-      `, `LoadScript(${script})`);
+      `, `LoadScript`);
+      delete window._tempScript;
       console.log(`Loaded ${script}`);
     };
 
     loadScript('/src/synthesizer.rb');
     loadScript('/src/sequencer.rb');
+    loadScript('/src/js_bridge.rb');
 
     // Init Sequencer & Synth
     App.eval("$sequencer = Sequencer.new(JS.eval('return window.App.audioCtx;'))");

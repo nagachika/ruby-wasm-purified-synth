@@ -61,7 +61,7 @@ export function setupPresets(App) {
     if (!name) return alert("Please enter a preset name.");
     try {
       // Always save the full patch structure (works for both legacy-style and custom)
-      const json = App.eval("$synth.export_patch", "PresetExport").toString();
+      const json = App.call("$synth", "export_patch").toString();
       const presets = getPresets();
       presets[name] = json;
       savePresets(presets);
@@ -76,13 +76,11 @@ export function setupPresets(App) {
     const presets = getPresets();
     if (presets[name]) {
         const json = presets[name];
-        window._tempPresetJson = json;
-
         try {
             const data = JSON.parse(json);
             if (data.nodes) {
                 // New Modular Patch Format
-                App.eval(`$synth.import_patch(JS.global[:_tempPresetJson])`, "PresetImport");
+                App.call("$synth", "import_patch", json);
                 if (window.modularEditor) {
                     window.modularEditor.loadPatch(data);
                 }

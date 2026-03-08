@@ -140,6 +140,97 @@ class Sequencer
     @total_steps / 32
   end
 
+  def set_total_bars(bars)
+    @total_steps = bars.to_i * 32
+  end
+
+  def set_bpm(bpm)
+    @bpm = bpm.to_i
+  end
+
+  def set_root_freq(freq)
+    @root_freq = freq.to_f
+  end
+
+  def set_swing_amount(amount)
+    @swing_amount = amount.to_f
+  end
+
+  def get_track_type(index)
+    @tracks[index]&.type.to_s
+  end
+
+  def set_track_mute(index, mute)
+    t = @tracks[index]
+    t.mute = (mute == true || mute == "true") if t
+  end
+
+  def set_track_solo(index, solo)
+    t = @tracks[index]
+    t.solo = (solo == true || solo == "true") if t
+  end
+
+  def set_track_volume(index, vol)
+    t = @tracks[index]
+    t.volume = vol.to_f if t
+  end
+
+  def get_track_volume(index)
+    @tracks[index]&.volume || 1.0
+  end
+
+  def get_track_preset_name(index)
+    @tracks[index]&.preset_name || ""
+  end
+
+  def set_track_preset_name(index, name)
+    t = @tracks[index]
+    t.preset_name = name.to_s if t
+  end
+
+  def import_track_patch(index, json)
+    t = @tracks[index]
+    t.synth.import_patch(json) if t
+  end
+
+  def get_track_mute(index)
+    @tracks[index]&.mute ? true : false
+  end
+
+  def get_track_solo(index)
+    @tracks[index]&.solo ? true : false
+  end
+
+  def set_block_chord_name(track_index, start_step, name)
+    t = @tracks[track_index]
+    return unless t
+    b = t.blocks.find { |blk| blk.start_step == start_step }
+    b.chord_name = name.to_s if b
+  end
+
+  def set_block_pattern_id(track_index, start_step, pattern_id)
+    t = @tracks[track_index]
+    return unless t
+    b = t.blocks.find { |blk| blk.start_step == start_step }
+    b.pattern_id = pattern_id.to_s if b
+  end
+
+  def get_block_pattern_id(track_index, start_step)
+    t = @tracks[track_index]
+    return nil unless t
+    b = t.blocks.find { |blk| blk.start_step == start_step }
+    b&.pattern_id
+  end
+
+  def get_tracks_count
+    @tracks.length
+  end
+
+  def set_block_notes_from_buffer(track_index, start_step, buffer)
+    # buffer expected to be a JS::Object (Float32Array)
+    update_block_notes_buffer(track_index, start_step, buffer)
+  end
+
   def add_track
     synth = Synthesizer.new(@ctx)
     synth.connect(@master_gain)
@@ -212,6 +303,11 @@ class Sequencer
         end
       end
     end
+  end
+
+  def rename_pattern(id, new_name)
+    p = get_pattern(id)
+    p.name = new_name if p
   end
 
   def get_pattern(id)
@@ -346,11 +442,13 @@ class Sequencer
   end
 
   def update_block_notes_buffer(track_index, start_step, flat_array)
-    track = @tracks[track_index]
+    t_idx = track_index.to_i
+    s_step = start_step.to_i
+    track = @tracks[t_idx]
     return unless track
     return if track.type == :rhythmic
 
-    block = track.blocks.find { |b| b.start_step == start_step }
+    block = track.blocks.find { |b| b.start_step == s_step }
     return unless block
 
     block.notes.clear
@@ -424,9 +522,9 @@ class Sequencer
     @next_note_time = @ctx[:currentTime].to_f + 0.1
 
     code = <<~JAVASCRIPT
-      window._seqInterval = setInterval(() => {
-        if (window.rubyVM) {
-          window.rubyVM.eval("$sequencer.scheduler");
+      window.App.seqInterval = setInterval(() => {
+        if (window.App && window.App.vm) {
+          window.App.vm.eval("$sequencer.scheduler");
         }
       }, #{@lookahead_ms});
     JAVASCRIPT
@@ -435,7 +533,7 @@ class Sequencer
 
   def stop
     @is_playing = false
-    JS.eval("clearInterval(window._seqInterval)")
+    JS.eval("clearInterval(window.App.seqInterval); delete window.App.seqInterval;")
   end
 
   def scheduler
@@ -566,6 +664,11 @@ class Sequencer
     f *= (1.75 ** note.d)
     f *= (2.75 ** note.e)
     f
+  end
+
+  def calculate_freq_from_coords(a, b, c, d, e)
+    n = NoteCoord.new(a.to_f, b.to_f, c.to_f, d.to_f, e.to_f)
+    calculate_freq(n)
   end
 
   def advance_step

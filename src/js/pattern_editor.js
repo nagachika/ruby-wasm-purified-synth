@@ -8,7 +8,7 @@ export function setupPatternEditor(App) {
 
   function savePatterns() {
       try {
-          const json = App.eval("$sequencer.export_patterns_json", "PatternsExport").toString();
+          const json = App.call("$sequencer", "export_patterns_json").toString();
           localStorage.setItem("ruby_synth_patterns", json);
       } catch (e) {
           console.error("Failed to save patterns", e);
@@ -19,8 +19,7 @@ export function setupPatternEditor(App) {
       try {
           const json = localStorage.getItem("ruby_synth_patterns");
           if (json) {
-              window._tempPatternsFn = json;
-              App.eval(`$sequencer.import_patterns_json(JS.global[:_tempPatternsFn])`, "PatternsImport");
+              App.call("$sequencer", "import_patterns_json", json);
           }
       } catch (e) {
           console.error("Failed to load patterns", e);
@@ -36,7 +35,7 @@ export function setupPatternEditor(App) {
 
     let patternData;
     try {
-      const json = App.eval(`$sequencer.get_pattern_events_json("${currentPatternId}")`, "GetPatternEvents").toString();
+      const json = App.call("$sequencer", "get_pattern_events_json", currentPatternId).toString();
       patternData = JSON.parse(json);
     } catch (e) {
       console.error("Error fetching pattern data", e);
@@ -100,7 +99,7 @@ export function setupPatternEditor(App) {
         }
 
         cell.onclick = () => {
-          App.eval(`$sequencer.toggle_pattern_step("${currentPatternId}", "${inst}", ${i})`, "ToggleStep");
+          App.call("$sequencer", "toggle_pattern_step", currentPatternId, inst, i);
           savePatterns();
           renderGrid();
         };
@@ -115,7 +114,7 @@ export function setupPatternEditor(App) {
   function updatePatternList() {
     let patterns = [];
     try {
-      const json = App.eval(`$sequencer.get_patterns_json`, "GetPatterns").toString();
+      const json = App.call("$sequencer", "get_patterns_json").toString();
       patterns = JSON.parse(json);
     } catch (e) { console.error(e); return; }
 
@@ -164,7 +163,7 @@ export function setupPatternEditor(App) {
       delBtn.onclick = (e) => {
           e.stopPropagation();
           if (confirm(`Delete pattern "${p.name}"?`)) {
-              App.eval(`$sequencer.delete_pattern("${p.id}")`, "DeletePattern");
+              App.call("$sequencer", "delete_pattern", p.id);
               savePatterns();
               updatePatternList();
           }
@@ -186,7 +185,7 @@ export function setupPatternEditor(App) {
     currentPatternId = id;
     let name = "";
     try {
-        const json = App.eval(`$sequencer.get_patterns_json`, "GetPatternsLoad").toString();
+        const json = App.call("$sequencer", "get_patterns_json").toString();
         const patterns = JSON.parse(json);
         const p = patterns.find(x => x.id === id);
         if(p) name = p.name;
@@ -201,11 +200,11 @@ export function setupPatternEditor(App) {
     const name = prompt("Enter pattern name:", "New Beat");
     if (name) {
       try {
-        App.eval(`$sequencer.create_pattern("${name}")`, "CreatePattern");
+        App.call("$sequencer", "create_pattern", name);
         savePatterns();
 
         // Select the new pattern (last one)
-        const json = App.eval(`$sequencer.get_patterns_json`, "GetPatternsAfterCreate").toString();
+        const json = App.call("$sequencer", "get_patterns_json").toString();
         const patterns = JSON.parse(json);
         const last = patterns[patterns.length - 1];
         if (last) {
@@ -220,7 +219,7 @@ export function setupPatternEditor(App) {
   patternNameInput.onchange = (e) => {
       if(!currentPatternId) return;
       // Update name in Ruby
-      App.eval(`$sequencer.get_pattern("${currentPatternId}").name = "${e.target.value}"`, "UpdatePatternName");
+      App.call("$sequencer", "rename_pattern", currentPatternId, e.target.value);
       savePatterns();
       updatePatternList();
   };

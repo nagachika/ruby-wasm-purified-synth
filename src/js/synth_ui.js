@@ -776,9 +776,7 @@ class ModularEditor {
     };
 
     const json = JSON.stringify(patch);
-    window._tempPatch = json;
-    this.App.eval(`$synth.import_patch(JS.global[:_tempPatch].to_s)`, "ModularSync");
-    delete window._tempPatch;
+    this.App.call("$synth", "import_patch", json);
   }
 }
 
@@ -800,7 +798,7 @@ export function setupUI(App) {
         let val = el.value;
         if (id.includes('time') || id.includes('seconds')) val += ' s';
         if (display) display.textContent = val;
-        App.eval(`$synth.${id} = ${el.value}.to_f`, `Effect(${id})`);
+        App.call("$synth", `${id}=`, parseFloat(el.value));
       });
     }
   });
@@ -822,7 +820,7 @@ export function setupKeyboard(App) {
     if (e.repeat) return;
     if (!viewSynth || !viewSynth.classList.contains("active")) return;
     const note = keyMap[e.key];
-    if (note) App.eval(`$synth.note_on(${getFreq(note)})`, "KeyboardOn");
+    if (note) App.call("$synth", "note_on", getFreq(note));
   });
 
   window.addEventListener("keyup", (e) => {
@@ -830,6 +828,6 @@ export function setupKeyboard(App) {
     if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
 
     const note = keyMap[e.key];
-    if (note) App.eval(`$synth.note_off(${getFreq(note)})`, "KeyboardOff");
+    if (note) App.call("$synth", "note_off", getFreq(note));
   });
 }

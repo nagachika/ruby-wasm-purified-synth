@@ -78,10 +78,15 @@ export function setupSequencer(App) {
     let totalSteps = 128;
 
     try {
-        tracksCount = parseInt(App.eval("$sequencer.tracks.length").toString());
-        currentTrackIndex = parseInt(App.eval("$sequencer.current_track_index").toString());
-        totalSteps = parseInt(App.eval("$sequencer.total_steps").toString());
-    } catch(e) { return; }
+        const tracksCountVal = App.call("$sequencer", "get_tracks_count");
+        if (!tracksCountVal) return; // Wait for initialization
+        tracksCount = parseInt(tracksCountVal.toString());
+        currentTrackIndex = parseInt(App.call("$sequencer", "current_track_index").toString());
+        totalSteps = parseInt(App.call("$sequencer", "total_steps").toString());
+    } catch(e) {
+        console.error("Error in renderSequencer initialization:", e);
+        return;
+    }
 
     // Ensure master scroll container exists
     let scrollContainer = document.getElementById("master-scroll-container");
@@ -127,8 +132,7 @@ export function setupSequencer(App) {
 
     for (let t = 0; t < tracksCount; t++) {
         let cached = trackRowsCache.get(t);
-        let trackType = "melodic";
-        try { trackType = App.eval(`$sequencer.tracks[${t}].type`).toString(); } catch(e){}
+        let trackType = App.call("$sequencer", "get_track_type", t).toString();
 
         if (!cached) {
             const row = document.createElement("div");
@@ -265,9 +269,8 @@ export function setupSequencer(App) {
                 cached.presetSel.onchange = (e) => {
                     const name = e.target.value;
                     if (name && presets[name]) {
-                        window._tempTrackPresetJson = presets[name];
-                        App.eval(`$sequencer.tracks[${t}].synth.import_patch(JS.global[:_tempTrackPresetJson])`);
-                        App.eval(`$sequencer.tracks[${t}].preset_name = "${name}"`);
+                        App.call("$sequencer", "import_track_patch", t, presets[name]);
+                        App.call("$sequencer", "set_track_preset_name", t, name);
                     }
                 };
                 cached.arpBtn.style.cursor = "pointer";
@@ -294,20 +297,17 @@ export function setupSequencer(App) {
 
         // Preset Value
         if (trackType === "melodic") {
-            try { cached.presetSel.value = App.eval(`$sequencer.tracks[${t}].preset_name`).toString(); } catch(e) {}
+            cached.presetSel.value = App.call("$sequencer", "get_track_preset_name", t).toString();
         }
 
         // Mute/Solo
-        let isMuted = false, isSolo = false;
-        try {
-            isMuted = App.eval(`$sequencer.tracks[${t}].mute`).toString() === "true";
-            isSolo = App.eval(`$sequencer.tracks[${t}].solo`).toString() === "true";
-        } catch(e) {}
+        let isMuted = App.call("$sequencer", "get_track_mute", t).toString() === "true";
+        let isSolo = App.call("$sequencer", "get_track_solo", t).toString() === "true";
 
         cached.muteBtn.innerHTML = `<span class="material-icons" style="font-size: 1.2rem;">${isMuted ? "volume_off" : "volume_up"}</span>`;
         cached.muteBtn.style.background = isMuted ? "#6c757d" : "#444";
         cached.muteBtn.onclick = () => {
-            App.eval(`$sequencer.tracks[${t}].mute = ${!isMuted}`);
+            App.call("$sequencer", "set_track_mute", t, !isMuted);
             renderSequencer();
         };
 
@@ -315,19 +315,18 @@ export function setupSequencer(App) {
         cached.soloBtn.style.background = isSolo ? "#fcc419" : "#444";
         cached.soloBtn.style.color = isSolo ? "black" : "white";
         cached.soloBtn.onclick = () => {
-            App.eval(`$sequencer.tracks[${t}].solo = ${!isSolo}`);
+            App.call("$sequencer", "set_track_solo", t, !isSolo);
             renderSequencer();
         };
 
         // Arp
         if (trackType === "melodic") {
-            let isArp = false;
-            try { isArp = App.eval(`$sequencer.get_arpeggiator_status(${t})`).toString() === "true"; } catch(e) {}
+            let isArp = App.call("$sequencer", "get_arpeggiator_status", t).toString() === "true";
             cached.arpBtn.innerHTML = `<span class="material-icons" style="font-size: 1.2rem;">${isArp ? "clear_all" : "dehaze"}</span>`;
             cached.arpBtn.style.background = isArp ? "#4dabf7" : "#444";
             cached.arpBtn.style.color = isArp ? "white" : "#ccc";
             cached.arpBtn.onclick = () => {
-                App.eval(`$sequencer.set_arpeggiator_enabled(${t}, ${!isArp})`);
+                App.call("$sequencer", "set_arpeggiator_enabled", t, !isArp);
                 renderSequencer();
             };
         } else {
@@ -338,8 +337,7 @@ export function setupSequencer(App) {
         }
 
         // Volume
-        let currentVol = 1.0;
-        try { currentVol = parseFloat(App.eval(`$sequencer.tracks[${t}].volume`).toString()); } catch(e) {}
+        let currentVol = parseFloat(App.call("$sequencer", "get_track_volume", t).toString());
         cached.knobIcon.style.transform = `rotate(${(currentVol - 1.0) * 160}deg)`;
         cached.knobContainer.onmousedown = (e) => {
             const startY = e.clientY;
@@ -347,7 +345,7 @@ export function setupSequencer(App) {
             const onMove = (me) => {
                 let nv = startVol + (startY - me.clientY) / 100;
                 if(nv < 0) nv = 0; if(nv > 2) nv = 2;
-                App.eval(`$sequencer.tracks[${t}].volume = ${nv}`);
+                App.call("$sequencer", "set_track_volume", t, nv);
                 cached.knobIcon.style.transform = `rotate(${(nv - 1.0) * 160}deg)`;
             };
             const onUp = () => {
@@ -362,7 +360,7 @@ export function setupSequencer(App) {
         grid.style.width = `${totalSteps * CELL_WIDTH}px`;
         grid.style.backgroundImage = `repeating-linear-gradient(90deg,#888 0px,#888 1px,transparent 1px,transparent ${CELL_WIDTH * 32}px),repeating-linear-gradient(90deg,#555 0px,#555 1px,transparent 1px,transparent ${CELL_WIDTH * 8}px),repeating-linear-gradient(90deg,#333 0px,#333 1px,transparent 1px,transparent ${CELL_WIDTH}px)`;
 
-        // Grid Events (re-bind to ensure index is correct if tracks shifted, though typically they don't)
+        // Grid Events
         grid.onmousedown = (e) => {
             if (e.target.classList.contains("block") || e.target.tagName === "CANVAS") return;
             isDrawing = true;
@@ -388,7 +386,7 @@ export function setupSequencer(App) {
 
         // Sync Blocks
         try {
-            const blocksJson = App.eval(`$sequencer.get_track_blocks_json(${t})`).toString();
+            const blocksJson = App.call("$sequencer", "get_track_blocks_json", t).toString();
             const blocks = JSON.parse(blocksJson);
             const currentBlockKeys = new Set();
 
@@ -430,8 +428,7 @@ export function setupSequencer(App) {
 
                 if (trackType === "rhythmic") {
                     blockDiv.style.background = "#ff8787";
-                    let pName = b.pattern_id;
-                    try { pName = App.eval(`$sequencer.get_pattern_name("${b.pattern_id}")`).toString(); } catch(e) {}
+                    const pName = App.call("$sequencer", "get_pattern_name", b.pattern_id).toString();
                     blockDiv.innerText = pName;
                     blockDiv.style.color = "black";
                     blockDiv.style.fontSize = "0.8rem";
@@ -450,7 +447,7 @@ export function setupSequencer(App) {
                     canvas.height = ch;
                     canvas.style.display = "block";
                     try {
-                        const notesJson = App.eval(`$sequencer.get_block_notes_json(${t}, ${b.start})`).toString();
+                        const notesJson = App.call("$sequencer", "get_block_notes_json", t, b.start).toString();
                         const notes = JSON.parse(notesJson);
                         drawTetrisShape(canvas.getContext("2d"), notes, cw, ch);
                     } catch(e){}
@@ -464,7 +461,7 @@ export function setupSequencer(App) {
                 blockDiv.oncontextmenu = (e) => {
                     e.preventDefault();
                     if(confirm("Delete block?")) {
-                        App.eval(`$sequencer.remove_block(${t}, ${b.start})`);
+                        App.call("$sequencer", "remove_block", t, b.start);
                         renderSequencer();
                     }
                 };
@@ -501,13 +498,13 @@ export function setupSequencer(App) {
   } // end renderSequencer
 
   function selectTrack(t) {
-      App.eval(`$sequencer.select_track(${t})`);
+      App.call("$sequencer", "select_track", t);
       renderSequencer();
   }
 
   function removeTrack(t) {
       if(confirm(`Remove Track ${t+1}?`)) {
-          App.eval(`$sequencer.remove_track(${t})`);
+          App.call("$sequencer", "remove_track", t);
           renderSequencer();
       }
   }
@@ -577,12 +574,12 @@ export function setupSequencer(App) {
           floatView[i * 5 + 4] = notes[i].e;
       }
       window._tempChordBuffer = floatView;
-      App.eval(`$sequencer.update_block_notes_buffer(${t}, ${s}, JS.global[:_tempChordBuffer])`);
-      App.eval(`
-        t = $sequencer.tracks[${t}]
-        b = t.blocks.find { |blk| blk.start_step == ${s} }
-        b.chord_name = "${name}" if b
-      `);
+      // Use App.eval but pass arguments via JS.global to avoid interpolation while keeping Float32Array intact.
+      window._tempArgs = [t, s, floatView];
+      App.eval(`$sequencer.set_block_notes_from_buffer(*JS.global[:_tempArgs].to_a)`, "UpdateBlockNotesBuffer");
+      delete window._tempArgs;
+
+      App.call("$sequencer", "set_block_chord_name", t, s, name);
       renderSequencer();
   }
 
@@ -594,7 +591,7 @@ export function setupSequencer(App) {
     // Fetch patterns
     let patterns = [];
     try {
-        const json = App.eval(`$sequencer.get_patterns_json`).toString();
+        const json = App.call("$sequencer", "get_patterns_json").toString();
         patterns = JSON.parse(json);
     } catch(e) {}
 
@@ -610,12 +607,7 @@ export function setupSequencer(App) {
 
         item.onclick = () => {
              // Assign pattern to block
-             // We only want to update the pattern_id, preserving the length.
-             App.eval(`
-                t = $sequencer.tracks[${trackIdx}]
-                b = t.blocks.find { |blk| blk.start_step == ${startStep} }
-                b.pattern_id = "${p.id}" if b
-             `);
+             App.call("$sequencer", "set_block_pattern_id", trackIdx, startStep, p.id);
              patternModal.style.display = "none";
              renderSequencer();
 
@@ -655,7 +647,7 @@ export function setupSequencer(App) {
         const len = Math.round(width / CELL_WIDTH);
         try {
             // Check type of track
-            const trackType = App.eval(`$sequencer.tracks[${drawTrackIndex}].type`).toString();
+            const trackType = App.call("$sequencer", "get_track_type", drawTrackIndex).toString();
 
             // Default length for rhythm blocks if it's just a click
             let finalLen = len;
@@ -664,13 +656,14 @@ export function setupSequencer(App) {
             }
 
             // Add block
-            App.eval(`$sequencer.add_or_update_block(${drawTrackIndex}, ${start}, ${finalLen})`);
+            App.call("$sequencer", "add_or_update_block", drawTrackIndex, start, finalLen);
             renderSequencer();
 
             if (trackType === "melodic") {
                 openChordSelector(drawTrackIndex, start);
             } else {
-                const pid = App.eval(`$sequencer.tracks[${drawTrackIndex}].blocks.find { |b| b.start_step == ${start} }.pattern_id`).toString();
+                const pidVal = App.call("$sequencer", "get_block_pattern_id", drawTrackIndex, start);
+                const pid = pidVal ? pidVal.toString() : "";
                 openPatternSelector(drawTrackIndex, start, pid);
             }
         } catch(e){ console.error(e); }
@@ -682,7 +675,7 @@ export function setupSequencer(App) {
 
   addTrackBtn.onclick = () => {
       try {
-          App.eval("$sequencer.add_track");
+          App.call("$sequencer", "add_track");
           renderSequencer();
       } catch(e) { console.error(e); }
   };
@@ -690,7 +683,7 @@ export function setupSequencer(App) {
   if (addRhythmTrackBtn) {
       addRhythmTrackBtn.onclick = () => {
           try {
-              App.eval("$sequencer.add_rhythm_track");
+              App.call("$sequencer", "add_rhythm_track");
               renderSequencer();
           } catch(e) { console.error(e); }
       };
@@ -698,32 +691,33 @@ export function setupSequencer(App) {
 
   playBtn.onclick = () => {
     try {
-      const isPlaying = App.eval("$sequencer.is_playing").toString() === "true";
+      const isPlayingVal = App.call("$sequencer", "is_playing");
+      const isPlaying = isPlayingVal && isPlayingVal.toString() === "true";
       if (isPlaying) {
-        App.eval("$sequencer.stop");
+        App.call("$sequencer", "stop");
         playBtn.innerHTML = '<span class="material-icons">play_arrow</span> Play';
         playBtn.style.background = "#007bff";
       } else {
-        App.eval("$sequencer.start");
+        App.call("$sequencer", "start");
         playBtn.innerHTML = '<span class="material-icons">stop</span> Stop';
         playBtn.style.background = "#dc3545";
       }
-    } catch (e) { console.error("Sequencer play/stop error:", e); }
+    } catch (e) { console.error("Sequencer play/stop UI error:", e); }
   };
   measuresInput.addEventListener("input", () => {
       if (measuresDisplay) measuresDisplay.textContent = measuresInput.value;
-      try { App.eval(`$sequencer.total_bars = ${measuresInput.value}`); renderSequencer(); } catch(e){}
+      try { App.call("$sequencer", "set_total_bars", parseInt(measuresInput.value)); renderSequencer(); } catch(e){}
   });
   bpmInput.addEventListener("input", () => {
       if (bpmDisplay) bpmDisplay.textContent = bpmInput.value;
-      try{App.eval(`$sequencer.bpm = ${bpmInput.value}`);}catch(e){}
+      try{App.call("$sequencer", "set_bpm", parseInt(bpmInput.value));}catch(e){}
   });
-  rootFreqInput.addEventListener("change", () => { try{App.eval(`$sequencer.root_freq = ${rootFreqInput.value}`);}catch(e){} });
+  rootFreqInput.addEventListener("change", () => { try{App.call("$sequencer", "set_root_freq", parseFloat(rootFreqInput.value));}catch(e){} });
 
   if (swingInput) {
       swingInput.addEventListener("input", () => {
           try{
-              App.eval(`$sequencer.swing_amount = ${swingInput.value}`);
+              App.call("$sequencer", "set_swing_amount", parseFloat(swingInput.value));
               const display = document.getElementById("val_swing");
               if (display) display.textContent = Math.round(swingInput.value * 100);
           }catch(e){}
