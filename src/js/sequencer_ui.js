@@ -2,44 +2,9 @@ import { CELL_WIDTH, drawTetrisShape } from "./utils.js";
 import { getChords } from "./chord_manager.js";
 import { getPresets } from "./presets.js";
 
-// Global callback for Playhead (Same as before)
-window.updatePlayhead = (stepIndex) => {
-  try {
-      const idx = Number(stepIndex);
-      const container = document.getElementById("sequencer-rows");
-      if (!container) return;
-
-      const oldPlayheads = container.querySelectorAll(".playhead-cursor");
-      oldPlayheads.forEach(el => el.remove());
-
-      const grids = container.querySelectorAll(".timeline-grid");
-      grids.forEach(grid => {
-         const cursor = document.createElement("div");
-         cursor.className = "playhead-cursor";
-         cursor.style.position = "absolute";
-         cursor.style.top = "0";
-         cursor.style.bottom = "0";
-         cursor.style.width = "2px";
-         cursor.style.background = "#fff";
-         cursor.style.boxShadow = "0 0 4px #fff";
-         cursor.style.left = `${idx * CELL_WIDTH}px`;
-         cursor.style.zIndex = "10";
-         cursor.style.pointerEvents = "none";
-         grid.appendChild(cursor);
-      });
-
-      const scrollContainer = document.getElementById("master-scroll-container");
-      if (scrollContainer) {
-          const left = idx * CELL_WIDTH;
-          const width = scrollContainer.clientWidth;
-          if (left < scrollContainer.scrollLeft || left > scrollContainer.scrollLeft + width) {
-              scrollContainer.scrollLeft = left - width / 2;
-          }
-      }
-  } catch (e) {
-      console.error("Error in updatePlayhead:", e);
-  }
-};
+// Queue for future playhead updates from Ruby
+const playheadQueue = [];
+let lastProcessedStep = -1;
 
 export function setupSequencer(App) {
   const rowsContainer = document.getElementById("sequencer-rows");
@@ -59,9 +24,9 @@ export function setupSequencer(App) {
   const selectorList = document.getElementById("selector-list");
 
   // Pattern Selector Modal (Rhythmic)
-  const patternModal = document.getElementById("pattern-selector-modal"); // Need to add to HTML
-  const patternClose = document.getElementById("close-pattern-selector"); // Need to add to HTML
-  const patternList = document.getElementById("pattern-selector-list"); // Need to add to HTML
+  const patternModal = document.getElementById("pattern-selector-modal");
+  const patternClose = document.getElementById("close-pattern-selector");
+  const patternList = document.getElementById("pattern-selector-list");
 
   let isDrawing = false;
   let drawStartStep = 0;
@@ -69,8 +34,53 @@ export function setupSequencer(App) {
   let ghostBlock = null;
 
   // Cache for DOM elements to avoid full re-renders
-  const trackRowsCache = new Map(); // index -> { row, controlDiv, grid, ... }
+  const trackRowsCache = new Map(); // index -> { row, controlDiv, grid, playhead, ... }
   const blockElementsCache = new Map(); // "trackIdx-startStep" -> { element, dataHash }
+
+  // Expose queue function to App
+  App.queuePlayheadUpdates = (json) => {
+    try {
+      const updates = JSON.parse(json);
+      playheadQueue.push(...updates);
+    } catch(e) { console.error("Error parsing playhead updates:", e); }
+  };
+
+  function updatePlayheadVisuals(stepIndex) {
+    const x = stepIndex * CELL_WIDTH;
+    trackRowsCache.forEach(cached => {
+      if (cached.playhead) {
+        cached.playhead.style.transform = `translateX(${x}px)`;
+      }
+    });
+
+    const scrollContainer = document.getElementById("master-scroll-container");
+    if (scrollContainer) {
+        const left = x;
+        const width = scrollContainer.clientWidth;
+        if (left < scrollContainer.scrollLeft || left > scrollContainer.scrollLeft + width) {
+            scrollContainer.scrollLeft = left - width / 2;
+        }
+    }
+  }
+
+  function animate() {
+    requestAnimationFrame(animate);
+    if (!App.audioCtx || App.audioCtx.state === 'suspended') return;
+
+    const now = App.audioCtx.currentTime;
+    let currentStep = -1;
+
+    // Process queue up to current audio time
+    while (playheadQueue.length > 0 && playheadQueue[0].time <= now) {
+      currentStep = playheadQueue.shift().step;
+    }
+
+    if (currentStep !== -1 && currentStep !== lastProcessedStep) {
+      updatePlayheadVisuals(currentStep);
+      lastProcessedStep = currentStep;
+    }
+  }
+  requestAnimationFrame(animate);
 
   function renderSequencer() {
     let tracksCount = 0;
@@ -235,6 +245,11 @@ export function setupSequencer(App) {
             timelineWrapper.appendChild(grid);
             row.appendChild(timelineWrapper);
 
+            // Create persistent playhead for this track
+            const playhead = document.createElement("div");
+            playhead.className = "playhead-cursor";
+            grid.appendChild(playhead);
+
             // Insert before the scroll row if it exists, or just append
             const scrollRowEl = document.getElementById("sequencer-scroll-row");
             if (scrollRowEl) {
@@ -244,7 +259,7 @@ export function setupSequencer(App) {
             }
 
             cached = {
-                row, controlDiv, grid, labelBtn, presetSel, muteBtn, soloBtn, arpBtn, knobIcon, knobContainer, trackType: null
+                row, controlDiv, grid, labelBtn, presetSel, muteBtn, soloBtn, arpBtn, knobIcon, knobContainer, playhead, trackType: null
             };
             trackRowsCache.set(t, cached);
         }

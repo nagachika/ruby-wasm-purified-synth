@@ -109,6 +109,19 @@
       stroke: #888; stroke-width: 3; cursor: pointer;
     }
     .edge.selected { stroke: #f06595; }
+
+    .playhead-cursor {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: #fff;
+      box-shadow: 0 0 4px #fff;
+      z-index: 10;
+      pointer-events: none;
+      transform: translateX(0);
+      will-change: transform;
+    }
   </style>
   <script type="importmap">
     {

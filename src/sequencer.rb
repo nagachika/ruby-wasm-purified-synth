@@ -537,9 +537,15 @@ class Sequencer
   end
 
   def scheduler
+    updates = []
     while @next_note_time < @ctx[:currentTime].to_f + @schedule_ahead_time
       schedule_step(@current_step, @next_note_time)
+      updates << { step: @current_step, time: @next_note_time }
       advance_step
+    end
+
+    if updates.any?
+      JS.global[:App].call(:queuePlayheadUpdates, JSON.generate(updates))
     end
   end
 
@@ -548,31 +554,8 @@ class Sequencer
     step_duration_sec = seconds_per_beat / 8.0 # 1/32 note resolution base
 
     # Apply Swing
-    # If step is even (0, 2, 4...), it's on grid.
-    # If step is odd (1, 3, 5...), it's off grid (the 'and' of 16th note if 1 step = 1/16??)
-    # Wait, resolution:
-    # 1 bar = 32 steps.
-    # 1 beat = 8 steps.
-    # 1/16 note = 2 steps.
-    # So even steps are 1/16 lines, odd steps are 1/32 intermediate?
-    # Usually swing applies to 1/16 notes.
-    # If our resolution is 32 steps per bar, that's 1/32 notes.
-    # 1/16 note indices are: 0, 2, 4, 6...
-    # The "off-beat" 1/16s are: 2, 6, 10... (wait, 0 is beat, 2 is next 1/16?)
-    # 0 (1.1.1), 2 (1.1.2), 4 (1.1.3), 6 (1.1.4)
-    # The swing usually delays the *second* 1/16th note of a pair.
-    # Pair: (0, 2), (4, 6), ...
-    # So indices 2, 6, 10... should be delayed.
-    # Indices are step_index.
-    # If step_index % 4 == 2, add swing offset.
-
     swing_offset = 0.0
     if (step_index % 4) == 2
-      # Max swing (100%) ~= triplet feel.
-      # 1/16 duration = step_duration_sec * 2
-      # Triplet 1/16 = 2/3 of straight 1/16?
-      # Let's just say swing_amount is percentage of 1/16 note duration to delay.
-      # 0.5 swing might be heavy.
       swing_offset = (step_duration_sec * 2) * (@swing_amount * 0.33)
     end
 
@@ -585,9 +568,6 @@ class Sequencer
       next if any_solo && !track.solo
 
       if track.type == :melodic
-        # If Arp is ON, we might need to schedule notes even if step_index is not block.start_step
-        # but for this "shift start" implementation, we can schedule all notes of the block
-        # at the block.start_step, just with different start times and durations.
         blocks = track.blocks.select { |b| b.start_step == step_index }
         blocks.each do |block|
           next if block.notes.empty?
@@ -595,8 +575,6 @@ class Sequencer
           if track.arpeggiator.enabled
             block.notes.each_with_index do |note, idx|
               delay_steps = idx * track.arpeggiator.division
-              # If the delay exceeds the block length, we could either clip it or let it play.
-              # Let's clip it to block length for now.
               next if delay_steps >= block.length
 
               note_start_time = play_time + (delay_steps * step_duration_sec)
@@ -613,17 +591,12 @@ class Sequencer
           end
         end
       elsif track.type == :rhythmic
-        # Find block covering this step
         block = track.find_block_at(step_index)
         next unless block && block.pattern_id
 
         pattern = get_pattern(block.pattern_id)
         next unless pattern
 
-        # Calculate local step in pattern
-        # Assume pattern loops if block is longer than pattern steps
-        # Pattern resolution: 1/16 note (2 sequencer steps)
-        # Sequencer resolution: 1/32 note
         local_step_abs = step_index - block.start_step
         pattern_seq_length = pattern.steps * 2
         local_pos = local_step_abs % pattern_seq_length
@@ -640,8 +613,6 @@ class Sequencer
         end
       end
     end
-
-    JS.global.call(:updatePlayhead, step_index)
   end
 
   def set_arpeggiator_enabled(track_index, enabled)
