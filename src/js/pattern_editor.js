@@ -1,33 +1,8 @@
 export function setupPatternEditor(vm) {
   const container = document.getElementById("pattern-editor-container");
-  const patternSelectOriginal = document.getElementById("pattern-select");
+  const patternListEl = document.getElementById("pattern-list");
   const newPatternBtn = document.getElementById("new-pattern-btn");
   const patternNameInput = document.getElementById("pattern-name");
-
-  // Replace <select> with a custom list container if not already done
-  // We need to do this because the original HTML has a select, but we want a list with delete buttons.
-  let patternListEl = document.getElementById("pattern-list");
-
-  if (!patternListEl && patternSelectOriginal) {
-      patternListEl = document.createElement("div");
-      patternListEl.id = "pattern-list";
-      patternListEl.style.width = "100%";
-      patternListEl.style.background = "#222";
-      patternListEl.style.color = "white";
-      patternListEl.style.border = "1px solid #555";
-      patternListEl.style.marginBottom = "10px";
-      patternListEl.style.flexGrow = "1";
-      patternListEl.style.overflowY = "auto";
-      patternListEl.style.height = "200px"; // Fallback height if flex fails (it's inside a flex column so should grow if styled right, but size=10 select has height)
-
-      patternSelectOriginal.replaceWith(patternListEl);
-  } else if (!patternListEl) {
-      // If we can't find the select or the list, create a dummy to prevent crash, though UI will be broken
-      patternListEl = document.createElement("div");
-  }
-
-  // We also need a container for the grid if not exists, to avoid clearing everything
-  // In the original, container IS the grid container.
 
   let currentPatternId = null;
 
@@ -256,4 +231,9 @@ export function setupPatternEditor(vm) {
 
   // Listen for global events to refresh if needed
   window.addEventListener("refreshPatterns", updatePatternList);
+  window.addEventListener("selectPattern", (e) => {
+      if (e.detail && e.detail.id) {
+          loadPattern(e.detail.id);
+      }
+  });
 }

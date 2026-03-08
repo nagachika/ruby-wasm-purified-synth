@@ -547,11 +547,7 @@ export function setupSequencer(vm) {
              renderSequencer();
 
              // Select this pattern in editor (so if we go there later, it's selected)
-             const patSelect = document.getElementById("pattern-select");
-             if(patSelect) {
-                 patSelect.value = p.id;
-                 patSelect.dispatchEvent(new Event("change"));
-             }
+             window.dispatchEvent(new CustomEvent("selectPattern", { detail: { id: p.id } }));
         };
 
         const editBtn = document.createElement("button");
@@ -563,11 +559,7 @@ export function setupSequencer(vm) {
             patternModal.style.display = "none";
              const tabPattern = document.getElementById("tab-pattern");
              if(tabPattern) tabPattern.click();
-             const patSelect = document.getElementById("pattern-select");
-             if(patSelect) {
-                 patSelect.value = p.id;
-                 patSelect.dispatchEvent(new Event("change"));
-             }
+             window.dispatchEvent(new CustomEvent("selectPattern", { detail: { id: p.id } }));
         };
         item.appendChild(editBtn);
 
