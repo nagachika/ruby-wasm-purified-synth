@@ -51,9 +51,9 @@ const NODE_TYPES = {
 };
 
 class ModularEditor {
-  constructor(containerId, vm) {
+  constructor(containerId, App) {
     this.container = d3.select(containerId);
-    this.vm = vm;
+    this.App = App;
     this.nodes = [];
     this.connections = [];
     this.svg = null;
@@ -777,13 +777,13 @@ class ModularEditor {
 
     const json = JSON.stringify(patch);
     window._tempPatch = json;
-    this.vm.eval(`$synth.import_patch(JS.global[:_tempPatch].to_s)`);
+    this.App.eval(`$synth.import_patch(JS.global[:_tempPatch].to_s)`, "ModularSync");
     delete window._tempPatch;
   }
 }
 
-export function setupUI(vm) {
-  const editor = new ModularEditor("#modular-editor", vm);
+export function setupUI(App) {
+  const editor = new ModularEditor("#modular-editor", App);
   window.modularEditor = editor;
 
   // Effects are still global panels for now
@@ -800,7 +800,7 @@ export function setupUI(vm) {
         let val = el.value;
         if (id.includes('time') || id.includes('seconds')) val += ' s';
         if (display) display.textContent = val;
-        vm.eval(`$synth.${id} = ${el.value}.to_f`);
+        App.eval(`$synth.${id} = ${el.value}.to_f`, `Effect(${id})`);
       });
     }
   });
@@ -811,7 +811,7 @@ const keyMap = {
   ',': 72, 'q': 72, '2': 73, 'w': 74, '3': 75, 'e': 76, 'r': 77, '5': 78, 't': 79, '6': 80, 'y': 81, '7': 82, 'u': 83
 };
 
-export function setupKeyboard(vm) {
+export function setupKeyboard(App) {
   const getFreq = (note) => 440.0 * Math.pow(2.0, (note - 69) / 12.0);
   const viewSynth = document.getElementById("view-synthesizer");
 
@@ -820,9 +820,9 @@ export function setupKeyboard(vm) {
     if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
 
     if (e.repeat) return;
-    if (!viewSynth.classList.contains("active")) return;
+    if (!viewSynth || !viewSynth.classList.contains("active")) return;
     const note = keyMap[e.key];
-    if (note) vm.eval(`$synth.note_on(${getFreq(note)})`);
+    if (note) App.eval(`$synth.note_on(${getFreq(note)})`, "KeyboardOn");
   });
 
   window.addEventListener("keyup", (e) => {
@@ -830,6 +830,6 @@ export function setupKeyboard(vm) {
     if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
 
     const note = keyMap[e.key];
-    if (note) vm.eval(`$synth.note_off(${getFreq(note)})`);
+    if (note) App.eval(`$synth.note_off(${getFreq(note)})`, "KeyboardOff");
   });
 }

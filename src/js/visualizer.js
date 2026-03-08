@@ -1,4 +1,4 @@
-export function setupVisualizer(vm) {
+export function setupVisualizer(App) {
   const canvas = document.getElementById("visualizer");
   const canvasCtx = canvas.getContext("2d");
   const bufferLength = 1024;

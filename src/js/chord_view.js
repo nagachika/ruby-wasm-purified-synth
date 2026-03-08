@@ -6,7 +6,7 @@ let currentChordName = "";
 let currentChordNotes = [];
 let chordSelectedCell = {x: 0, y: 0};
 
-export function setupChordView(vm) {
+export function setupChordView(App) {
   const nameInput = document.getElementById("chord-name-input");
   const saveBtn = document.getElementById("save-chord-btn");
   const createBtn = document.getElementById("create-chord-btn");
@@ -24,16 +24,16 @@ export function setupChordView(vm) {
   // Preview Button Logic
   previewBtn.onclick = () => {
     if (currentChordNotes.length === 0) return;
-    const now = window.audioCtx.currentTime;
+    const now = App.audioCtx.currentTime;
     // Play all notes in chord simultaneously
     currentChordNotes.forEach(note => {
         try {
-          const freqStr = vm.eval(`
+          const freqStr = App.eval(`
             n = NoteCoord.new(${note.a}, ${note.b}, ${note.c}, ${note.d}, ${note.e})
             $sequencer.calculate_freq(n)
-          `).toString();
+          `, "ChordPreview").toString();
           const freq = parseFloat(freqStr);
-          vm.eval(`$previewSynth.schedule_note(${freq}, ${now}, 0.5)`);
+          App.eval(`$previewSynth.schedule_note(${freq}, ${now}, 0.5)`, "ChordPreviewPlay");
         } catch(e) { console.error(e); }
     });
   };
@@ -60,7 +60,7 @@ export function setupChordView(vm) {
          window._tempPreviewJson = presets[name];
          const data = JSON.parse(presets[name]);
          if (data.nodes) {
-            vm.eval(`$previewSynth.import_patch(JS.global[:_tempPreviewJson])`);
+            App.eval(`$previewSynth.import_patch(JS.global[:_tempPreviewJson])`, "PreviewSynthImport");
          } else {
             console.warn("Legacy preset format is no longer supported in preview.");
          }
@@ -73,7 +73,7 @@ export function setupChordView(vm) {
     currentChordNotes = [];
     chordSelectedCell = {x: 0, y: 0};
     nameInput.value = "";
-    renderChordEditor(vm);
+    renderChordEditor(App);
   };
 
   saveBtn.onclick = () => {
@@ -85,7 +85,7 @@ export function setupChordView(vm) {
         notes: JSON.parse(JSON.stringify(currentChordNotes)),
         dimension: parseInt(yAxisSel.value)
     });
-    renderChordList(vm);
+    renderChordList(App);
     alert(`Chord "${name}" saved!`);
   };
 
@@ -107,10 +107,10 @@ export function setupChordView(vm) {
           else if (newDim === 5) note.e = yVal;
       });
 
-      renderChordEditor(vm);
+      renderChordEditor(App);
   };
 
-  function renderChordList(vm) {
+  function renderChordList(App) {
     listContainer.innerHTML = "";
     const chords = getChords();
     Object.keys(chords).forEach(name => {
@@ -147,7 +147,7 @@ export function setupChordView(vm) {
         e.stopPropagation();
         if(confirm(`Delete chord "${name}"?`)){
           deleteChord(name);
-          renderChordList(vm);
+          renderChordList(App);
         }
       };
 
@@ -169,7 +169,7 @@ export function setupChordView(vm) {
         }
 
         nameInput.value = name;
-        renderChordEditor(vm);
+        renderChordEditor(App);
       };
 
       item.appendChild(canvas);
@@ -199,14 +199,14 @@ export function setupChordView(vm) {
         currentChordNotes.push(newNote);
 
         // Audition
-        playPreviewNote(vm, newNote);
+        playPreviewNote(App, newNote);
     }
 
     chordSelectedCell = {x, y};
-    renderChordEditor(vm);
+    renderChordEditor(App);
   }
 
-  function renderChordEditor(vm) {
+  function renderChordEditor(App) {
     const dim = parseInt(yAxisSel.value);
 
     // Generic Lattice Renderer
@@ -215,22 +215,22 @@ export function setupChordView(vm) {
     });
   }
 
-  function playPreviewNote(vm, noteObj) {
+  function playPreviewNote(App, noteObj) {
       try {
-          const freqStr = vm.eval(`
+          const freqStr = App.eval(`
             n = NoteCoord.new(${noteObj.a}, ${noteObj.b}, ${noteObj.c}, ${noteObj.d}, ${noteObj.e})
             $sequencer.calculate_freq(n)
-          `).toString();
+          `, "PlayPreviewNote").toString();
           const freq = parseFloat(freqStr);
-          const now = window.audioCtx.currentTime;
-          vm.eval(`$previewSynth.schedule_note(${freq}, ${now}, 0.3)`);
+          const now = App.audioCtx.currentTime;
+          App.eval(`$previewSynth.schedule_note(${freq}, ${now}, 0.3)`, "PlayPreviewNoteSchedule");
       } catch(e) { console.error(e); }
   }
 
   // Handle Keyboard for editor
   window.addEventListener("keydown", (e) => {
       const viewChord = document.getElementById("view-chord");
-      if (!viewChord.classList.contains("active")) return;
+      if (!viewChord || !viewChord.classList.contains("active")) return;
       if (!chordSelectedCell) return;
 
       if (e.key === " ") {
@@ -253,8 +253,8 @@ export function setupChordView(vm) {
 
           if (note) {
               note.a += delta;
-              playPreviewNote(vm, note);
-              renderChordEditor(vm);
+              playPreviewNote(App, note);
+              renderChordEditor(App);
           }
       }
 
@@ -275,13 +275,13 @@ export function setupChordView(vm) {
           if(chordSelectedCell.y < -2) chordSelectedCell.y = -2;
           if(chordSelectedCell.y > 2) chordSelectedCell.y = 2;
 
-          renderChordEditor(vm);
+          renderChordEditor(App);
           e.preventDefault();
       }
   });
 
-  renderChordList(vm);
-  renderChordEditor(vm);
+  renderChordList(App);
+  renderChordEditor(App);
 }
 
 function renderGenericLattice(container, notes, dim, selectedCell, onToggle) {

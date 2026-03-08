@@ -10,6 +10,23 @@ import { setupPatternEditor } from "./pattern_editor.js";
 const startBtn = document.getElementById("start-btn");
 const overlay = document.getElementById("start-overlay");
 
+// Central Application Object
+window.App = {
+  vm: null,
+  audioCtx: null,
+
+  // Safe Ruby evaluation with centralized error handling
+  eval(code, context = "Main") {
+    try {
+      return this.vm.eval(code);
+    } catch (e) {
+      console.error(`[Ruby Error in ${context}]:`, e);
+      // Optional: Show user-friendly notification if needed
+      return null;
+    }
+  }
+};
+
 function setupTabs() {
   const tabSynth = document.getElementById("tab-synth");
   const tabSeq = document.getElementById("tab-seq");
@@ -54,7 +71,7 @@ const main = async () => {
   const module = await WebAssembly.compile(buffer);
   const { vm } = await DefaultRubyVM(module);
 
-  window.rubyVM = vm;
+  App.vm = vm;
   console.log("Ruby VM loaded");
 
   // Enable the start button and update text now that VM is ready
@@ -62,11 +79,14 @@ const main = async () => {
   startBtn.textContent = "Click to Start";
 
   // Ensure JS module is loaded
-  vm.eval("require 'js'");
+  App.eval("require 'js'");
 
   startBtn.onclick = async () => {
-    if (!window.audioCtx) window.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if (window.audioCtx.state === 'suspended') await window.audioCtx.resume();
+    if (!App.audioCtx) App.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (App.audioCtx.state === 'suspended') await App.audioCtx.resume();
+    // Expose for visualizer (Legacy support if needed, or update visualizer)
+    window.audioCtx = App.audioCtx;
+
     overlay.style.display = "none";
 
     console.log("Loading Ruby scripts...");
@@ -98,21 +118,21 @@ const main = async () => {
       // Ensure directory exists
       const dir = vfsPath.substring(0, vfsPath.lastIndexOf('/'));
       if (dir) {
-        vm.eval(`
+        App.eval(`
           parts = '${dir}'.split('/').reject(&:empty?)
           current = ''
           parts.each do |part|
             current = current + '/' + part
             Dir.mkdir(current) unless Dir.exist?(current)
           end
-        `);
+        `, "DirSetup");
       }
 
       // Write file
-      vm.eval(`File.write('${vfsPath}', JS.global[:_rubyFileContent])`);
+      App.eval(`File.write('${vfsPath}', JS.global[:_rubyFileContent])`, "FileWrite");
 
       // Verify write
-      const exists = vm.eval(`File.exist?('${vfsPath}')`).toJS();
+      const exists = App.eval(`File.exist?('${vfsPath}')`, "FileExistCheck").toJS();
       if (!exists) {
         console.error(`Failed to write ${vfsPath}`);
       }
@@ -122,48 +142,44 @@ const main = async () => {
     delete window._rubyFileContent;
 
     // Add src to load path
-    vm.eval("$LOAD_PATH.unshift '/src'");
+    App.eval("$LOAD_PATH.unshift '/src'");
 
-    // Load entry points with error handling
+    // Load entry points
     const loadScript = (script) => {
-      try {
-        vm.eval(`
-          begin
-            require '${script}'
-          rescue LoadError => e
-            puts "Error loading ${script}: #{e.message}"
-            puts e.backtrace
-            raise e
-          end
-        `);
-        console.log(`Loaded ${script}`);
-      } catch (e) {
-        console.error(`JS Exception loading ${script}`, e);
-      }
+      App.eval(`
+        begin
+          require '${script}'
+        rescue LoadError => e
+          puts "Error loading ${script}: #{e.message}"
+          puts e.backtrace
+          raise e
+        end
+      `, `LoadScript(${script})`);
+      console.log(`Loaded ${script}`);
     };
 
     loadScript('/src/synthesizer.rb');
     loadScript('/src/sequencer.rb');
 
     // Init Sequencer & Synth
-    vm.eval("$sequencer = Sequencer.new(JS.eval('return window.audioCtx;'))");
-    vm.eval("$synth = $sequencer.current_track.synth");
+    App.eval("$sequencer = Sequencer.new(JS.eval('return window.App.audioCtx;'))");
+    App.eval("$synth = $sequencer.current_track.synth");
 
     // Create a standalone synth for Chord Preview
-    vm.eval("$previewSynth = Synthesizer.new(JS.eval('return window.audioCtx;'))");
-    vm.eval("$previewSynth.connect_to_destination_with_compressor");
+    App.eval("$previewSynth = Synthesizer.new(JS.eval('return window.App.audioCtx;'))");
+    App.eval("$previewSynth.connect_to_destination_with_compressor");
 
     console.log("Initialized");
 
     loadChords();
     setupTabs();
-    setupUI(vm);
-    setupKeyboard(vm);
-    setupVisualizer(vm);
-    setupSequencer(vm);
-    setupPresets(vm);
-    setupChordView(vm);
-    setupPatternEditor(vm);
+    setupUI(App);
+    setupKeyboard(App);
+    setupVisualizer(App);
+    setupSequencer(App);
+    setupPresets(App);
+    setupChordView(App);
+    setupPatternEditor(App);
   };
 };
 

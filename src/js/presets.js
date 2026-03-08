@@ -37,7 +37,7 @@ export function updateUIFromSettings(json) {
     } catch(e) { console.error(e); }
   }
 
-export function setupPresets(vm) {
+export function setupPresets(App) {
   const nameInput = document.getElementById("preset_name");
   const saveBtn = document.getElementById("save_preset");
   const listSelect = document.getElementById("preset_list");
@@ -61,7 +61,7 @@ export function setupPresets(vm) {
     if (!name) return alert("Please enter a preset name.");
     try {
       // Always save the full patch structure (works for both legacy-style and custom)
-      const json = vm.eval("$synth.export_patch").toString();
+      const json = App.eval("$synth.export_patch", "PresetExport").toString();
       const presets = getPresets();
       presets[name] = json;
       savePresets(presets);
@@ -82,7 +82,7 @@ export function setupPresets(vm) {
             const data = JSON.parse(json);
             if (data.nodes) {
                 // New Modular Patch Format
-                vm.eval(`$synth.import_patch(JS.global[:_tempPresetJson])`);
+                App.eval(`$synth.import_patch(JS.global[:_tempPresetJson])`, "PresetImport");
                 if (window.modularEditor) {
                     window.modularEditor.loadPatch(data);
                 }

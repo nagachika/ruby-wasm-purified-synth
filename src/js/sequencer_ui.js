@@ -4,8 +4,6 @@ import { getPresets } from "./presets.js";
 
 // Global callback for Playhead (Same as before)
 window.updatePlayhead = (stepIndex) => {
-  // ... (Same implementation, can keep reference if not overwritten)
-  // To avoid duplication if I rewrite the whole file, I include it.
   try {
       const idx = Number(stepIndex);
       const container = document.getElementById("sequencer-rows");
@@ -43,7 +41,7 @@ window.updatePlayhead = (stepIndex) => {
   }
 };
 
-export function setupSequencer(vm) {
+export function setupSequencer(App) {
   const rowsContainer = document.getElementById("sequencer-rows");
   const playBtn = document.getElementById("seq-play-btn");
   const addTrackBtn = document.getElementById("add_track_btn");
@@ -80,9 +78,9 @@ export function setupSequencer(vm) {
     let totalSteps = 128;
 
     try {
-        tracksCount = parseInt(vm.eval("$sequencer.tracks.length").toString());
-        currentTrackIndex = parseInt(vm.eval("$sequencer.current_track_index").toString());
-        totalSteps = parseInt(vm.eval("$sequencer.total_steps").toString());
+        tracksCount = parseInt(App.eval("$sequencer.tracks.length").toString());
+        currentTrackIndex = parseInt(App.eval("$sequencer.current_track_index").toString());
+        totalSteps = parseInt(App.eval("$sequencer.total_steps").toString());
     } catch(e) { return; }
 
     // Ensure master scroll container exists
@@ -130,7 +128,7 @@ export function setupSequencer(vm) {
     for (let t = 0; t < tracksCount; t++) {
         let cached = trackRowsCache.get(t);
         let trackType = "melodic";
-        try { trackType = vm.eval(`$sequencer.tracks[${t}].type`).toString(); } catch(e){}
+        try { trackType = App.eval(`$sequencer.tracks[${t}].type`).toString(); } catch(e){}
 
         if (!cached) {
             const row = document.createElement("div");
@@ -268,8 +266,8 @@ export function setupSequencer(vm) {
                     const name = e.target.value;
                     if (name && presets[name]) {
                         window._tempTrackPresetJson = presets[name];
-                        vm.eval(`$sequencer.tracks[${t}].synth.import_patch(JS.global[:_tempTrackPresetJson])`);
-                        vm.eval(`$sequencer.tracks[${t}].preset_name = "${name}"`);
+                        App.eval(`$sequencer.tracks[${t}].synth.import_patch(JS.global[:_tempTrackPresetJson])`);
+                        App.eval(`$sequencer.tracks[${t}].preset_name = "${name}"`);
                     }
                 };
                 cached.arpBtn.style.cursor = "pointer";
@@ -296,20 +294,20 @@ export function setupSequencer(vm) {
 
         // Preset Value
         if (trackType === "melodic") {
-            try { cached.presetSel.value = vm.eval(`$sequencer.tracks[${t}].preset_name`).toString(); } catch(e) {}
+            try { cached.presetSel.value = App.eval(`$sequencer.tracks[${t}].preset_name`).toString(); } catch(e) {}
         }
 
         // Mute/Solo
         let isMuted = false, isSolo = false;
         try {
-            isMuted = vm.eval(`$sequencer.tracks[${t}].mute`).toString() === "true";
-            isSolo = vm.eval(`$sequencer.tracks[${t}].solo`).toString() === "true";
+            isMuted = App.eval(`$sequencer.tracks[${t}].mute`).toString() === "true";
+            isSolo = App.eval(`$sequencer.tracks[${t}].solo`).toString() === "true";
         } catch(e) {}
 
         cached.muteBtn.innerHTML = `<span class="material-icons" style="font-size: 1.2rem;">${isMuted ? "volume_off" : "volume_up"}</span>`;
         cached.muteBtn.style.background = isMuted ? "#6c757d" : "#444";
         cached.muteBtn.onclick = () => {
-            vm.eval(`$sequencer.tracks[${t}].mute = ${!isMuted}`);
+            App.eval(`$sequencer.tracks[${t}].mute = ${!isMuted}`);
             renderSequencer();
         };
 
@@ -317,19 +315,19 @@ export function setupSequencer(vm) {
         cached.soloBtn.style.background = isSolo ? "#fcc419" : "#444";
         cached.soloBtn.style.color = isSolo ? "black" : "white";
         cached.soloBtn.onclick = () => {
-            vm.eval(`$sequencer.tracks[${t}].solo = ${!isSolo}`);
+            App.eval(`$sequencer.tracks[${t}].solo = ${!isSolo}`);
             renderSequencer();
         };
 
         // Arp
         if (trackType === "melodic") {
             let isArp = false;
-            try { isArp = vm.eval(`$sequencer.get_arpeggiator_status(${t})`).toString() === "true"; } catch(e) {}
+            try { isArp = App.eval(`$sequencer.get_arpeggiator_status(${t})`).toString() === "true"; } catch(e) {}
             cached.arpBtn.innerHTML = `<span class="material-icons" style="font-size: 1.2rem;">${isArp ? "clear_all" : "dehaze"}</span>`;
             cached.arpBtn.style.background = isArp ? "#4dabf7" : "#444";
             cached.arpBtn.style.color = isArp ? "white" : "#ccc";
             cached.arpBtn.onclick = () => {
-                vm.eval(`$sequencer.set_arpeggiator_enabled(${t}, ${!isArp})`);
+                App.eval(`$sequencer.set_arpeggiator_enabled(${t}, ${!isArp})`);
                 renderSequencer();
             };
         } else {
@@ -341,7 +339,7 @@ export function setupSequencer(vm) {
 
         // Volume
         let currentVol = 1.0;
-        try { currentVol = parseFloat(vm.eval(`$sequencer.tracks[${t}].volume`).toString()); } catch(e) {}
+        try { currentVol = parseFloat(App.eval(`$sequencer.tracks[${t}].volume`).toString()); } catch(e) {}
         cached.knobIcon.style.transform = `rotate(${(currentVol - 1.0) * 160}deg)`;
         cached.knobContainer.onmousedown = (e) => {
             const startY = e.clientY;
@@ -349,7 +347,7 @@ export function setupSequencer(vm) {
             const onMove = (me) => {
                 let nv = startVol + (startY - me.clientY) / 100;
                 if(nv < 0) nv = 0; if(nv > 2) nv = 2;
-                vm.eval(`$sequencer.tracks[${t}].volume = ${nv}`);
+                App.eval(`$sequencer.tracks[${t}].volume = ${nv}`);
                 cached.knobIcon.style.transform = `rotate(${(nv - 1.0) * 160}deg)`;
             };
             const onUp = () => {
@@ -390,7 +388,7 @@ export function setupSequencer(vm) {
 
         // Sync Blocks
         try {
-            const blocksJson = vm.eval(`$sequencer.get_track_blocks_json(${t})`).toString();
+            const blocksJson = App.eval(`$sequencer.get_track_blocks_json(${t})`).toString();
             const blocks = JSON.parse(blocksJson);
             const currentBlockKeys = new Set();
 
@@ -433,7 +431,7 @@ export function setupSequencer(vm) {
                 if (trackType === "rhythmic") {
                     blockDiv.style.background = "#ff8787";
                     let pName = b.pattern_id;
-                    try { pName = vm.eval(`$sequencer.get_pattern_name("${b.pattern_id}")`).toString(); } catch(e) {}
+                    try { pName = App.eval(`$sequencer.get_pattern_name("${b.pattern_id}")`).toString(); } catch(e) {}
                     blockDiv.innerText = pName;
                     blockDiv.style.color = "black";
                     blockDiv.style.fontSize = "0.8rem";
@@ -452,7 +450,7 @@ export function setupSequencer(vm) {
                     canvas.height = ch;
                     canvas.style.display = "block";
                     try {
-                        const notesJson = vm.eval(`$sequencer.get_block_notes_json(${t}, ${b.start})`).toString();
+                        const notesJson = App.eval(`$sequencer.get_block_notes_json(${t}, ${b.start})`).toString();
                         const notes = JSON.parse(notesJson);
                         drawTetrisShape(canvas.getContext("2d"), notes, cw, ch);
                     } catch(e){}
@@ -466,7 +464,7 @@ export function setupSequencer(vm) {
                 blockDiv.oncontextmenu = (e) => {
                     e.preventDefault();
                     if(confirm("Delete block?")) {
-                        vm.eval(`$sequencer.remove_block(${t}, ${b.start})`);
+                        App.eval(`$sequencer.remove_block(${t}, ${b.start})`);
                         renderSequencer();
                     }
                 };
@@ -503,13 +501,13 @@ export function setupSequencer(vm) {
   } // end renderSequencer
 
   function selectTrack(t) {
-      vm.eval(`$sequencer.select_track(${t})`);
+      App.eval(`$sequencer.select_track(${t})`);
       renderSequencer();
   }
 
   function removeTrack(t) {
       if(confirm(`Remove Track ${t+1}?`)) {
-          vm.eval(`$sequencer.remove_track(${t})`);
+          App.eval(`$sequencer.remove_track(${t})`);
           renderSequencer();
       }
   }
@@ -579,8 +577,8 @@ export function setupSequencer(vm) {
           floatView[i * 5 + 4] = notes[i].e;
       }
       window._tempChordBuffer = floatView;
-      vm.eval(`$sequencer.update_block_notes_buffer(${t}, ${s}, JS.global[:_tempChordBuffer])`);
-      vm.eval(`
+      App.eval(`$sequencer.update_block_notes_buffer(${t}, ${s}, JS.global[:_tempChordBuffer])`);
+      App.eval(`
         t = $sequencer.tracks[${t}]
         b = t.blocks.find { |blk| blk.start_step == ${s} }
         b.chord_name = "${name}" if b
@@ -596,7 +594,7 @@ export function setupSequencer(vm) {
     // Fetch patterns
     let patterns = [];
     try {
-        const json = vm.eval(`$sequencer.get_patterns_json`).toString();
+        const json = App.eval(`$sequencer.get_patterns_json`).toString();
         patterns = JSON.parse(json);
     } catch(e) {}
 
@@ -613,7 +611,7 @@ export function setupSequencer(vm) {
         item.onclick = () => {
              // Assign pattern to block
              // We only want to update the pattern_id, preserving the length.
-             vm.eval(`
+             App.eval(`
                 t = $sequencer.tracks[${trackIdx}]
                 b = t.blocks.find { |blk| blk.start_step == ${startStep} }
                 b.pattern_id = "${p.id}" if b
@@ -657,7 +655,7 @@ export function setupSequencer(vm) {
         const len = Math.round(width / CELL_WIDTH);
         try {
             // Check type of track
-            const trackType = vm.eval(`$sequencer.tracks[${drawTrackIndex}].type`).toString();
+            const trackType = App.eval(`$sequencer.tracks[${drawTrackIndex}].type`).toString();
 
             // Default length for rhythm blocks if it's just a click
             let finalLen = len;
@@ -666,13 +664,13 @@ export function setupSequencer(vm) {
             }
 
             // Add block
-            vm.eval(`$sequencer.add_or_update_block(${drawTrackIndex}, ${start}, ${finalLen})`);
+            App.eval(`$sequencer.add_or_update_block(${drawTrackIndex}, ${start}, ${finalLen})`);
             renderSequencer();
 
             if (trackType === "melodic") {
                 openChordSelector(drawTrackIndex, start);
             } else {
-                const pid = vm.eval(`$sequencer.tracks[${drawTrackIndex}].blocks.find { |b| b.start_step == ${start} }.pattern_id`).toString();
+                const pid = App.eval(`$sequencer.tracks[${drawTrackIndex}].blocks.find { |b| b.start_step == ${start} }.pattern_id`).toString();
                 openPatternSelector(drawTrackIndex, start, pid);
             }
         } catch(e){ console.error(e); }
@@ -684,7 +682,7 @@ export function setupSequencer(vm) {
 
   addTrackBtn.onclick = () => {
       try {
-          vm.eval("$sequencer.add_track");
+          App.eval("$sequencer.add_track");
           renderSequencer();
       } catch(e) { console.error(e); }
   };
@@ -692,7 +690,7 @@ export function setupSequencer(vm) {
   if (addRhythmTrackBtn) {
       addRhythmTrackBtn.onclick = () => {
           try {
-              vm.eval("$sequencer.add_rhythm_track");
+              App.eval("$sequencer.add_rhythm_track");
               renderSequencer();
           } catch(e) { console.error(e); }
       };
@@ -700,13 +698,13 @@ export function setupSequencer(vm) {
 
   playBtn.onclick = () => {
     try {
-      const isPlaying = vm.eval("$sequencer.is_playing").toString() === "true";
+      const isPlaying = App.eval("$sequencer.is_playing").toString() === "true";
       if (isPlaying) {
-        vm.eval("$sequencer.stop");
+        App.eval("$sequencer.stop");
         playBtn.innerHTML = '<span class="material-icons">play_arrow</span> Play';
         playBtn.style.background = "#007bff";
       } else {
-        vm.eval("$sequencer.start");
+        App.eval("$sequencer.start");
         playBtn.innerHTML = '<span class="material-icons">stop</span> Stop';
         playBtn.style.background = "#dc3545";
       }
@@ -714,18 +712,18 @@ export function setupSequencer(vm) {
   };
   measuresInput.addEventListener("input", () => {
       if (measuresDisplay) measuresDisplay.textContent = measuresInput.value;
-      try { vm.eval(`$sequencer.total_bars = ${measuresInput.value}`); renderSequencer(); } catch(e){}
+      try { App.eval(`$sequencer.total_bars = ${measuresInput.value}`); renderSequencer(); } catch(e){}
   });
   bpmInput.addEventListener("input", () => {
       if (bpmDisplay) bpmDisplay.textContent = bpmInput.value;
-      try{vm.eval(`$sequencer.bpm = ${bpmInput.value}`);}catch(e){}
+      try{App.eval(`$sequencer.bpm = ${bpmInput.value}`);}catch(e){}
   });
-  rootFreqInput.addEventListener("change", () => { try{vm.eval(`$sequencer.root_freq = ${rootFreqInput.value}`);}catch(e){} });
+  rootFreqInput.addEventListener("change", () => { try{App.eval(`$sequencer.root_freq = ${rootFreqInput.value}`);}catch(e){} });
 
   if (swingInput) {
       swingInput.addEventListener("input", () => {
           try{
-              vm.eval(`$sequencer.swing_amount = ${swingInput.value}`);
+              App.eval(`$sequencer.swing_amount = ${swingInput.value}`);
               const display = document.getElementById("val_swing");
               if (display) display.textContent = Math.round(swingInput.value * 100);
           }catch(e){}

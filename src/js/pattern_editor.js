@@ -1,4 +1,4 @@
-export function setupPatternEditor(vm) {
+export function setupPatternEditor(App) {
   const container = document.getElementById("pattern-editor-container");
   const patternListEl = document.getElementById("pattern-list");
   const newPatternBtn = document.getElementById("new-pattern-btn");
@@ -8,7 +8,7 @@ export function setupPatternEditor(vm) {
 
   function savePatterns() {
       try {
-          const json = vm.eval("$sequencer.export_patterns_json").toString();
+          const json = App.eval("$sequencer.export_patterns_json", "PatternsExport").toString();
           localStorage.setItem("ruby_synth_patterns", json);
       } catch (e) {
           console.error("Failed to save patterns", e);
@@ -20,7 +20,7 @@ export function setupPatternEditor(vm) {
           const json = localStorage.getItem("ruby_synth_patterns");
           if (json) {
               window._tempPatternsFn = json;
-              vm.eval(`$sequencer.import_patterns_json(JS.global[:_tempPatternsFn])`);
+              App.eval(`$sequencer.import_patterns_json(JS.global[:_tempPatternsFn])`, "PatternsImport");
           }
       } catch (e) {
           console.error("Failed to load patterns", e);
@@ -36,7 +36,7 @@ export function setupPatternEditor(vm) {
 
     let patternData;
     try {
-      const json = vm.eval(`$sequencer.get_pattern_events_json("${currentPatternId}")`).toString();
+      const json = App.eval(`$sequencer.get_pattern_events_json("${currentPatternId}")`, "GetPatternEvents").toString();
       patternData = JSON.parse(json);
     } catch (e) {
       console.error("Error fetching pattern data", e);
@@ -100,7 +100,7 @@ export function setupPatternEditor(vm) {
         }
 
         cell.onclick = () => {
-          vm.eval(`$sequencer.toggle_pattern_step("${currentPatternId}", "${inst}", ${i})`);
+          App.eval(`$sequencer.toggle_pattern_step("${currentPatternId}", "${inst}", ${i})`, "ToggleStep");
           savePatterns();
           renderGrid();
         };
@@ -115,7 +115,7 @@ export function setupPatternEditor(vm) {
   function updatePatternList() {
     let patterns = [];
     try {
-      const json = vm.eval(`$sequencer.get_patterns_json`).toString();
+      const json = App.eval(`$sequencer.get_patterns_json`, "GetPatterns").toString();
       patterns = JSON.parse(json);
     } catch (e) { console.error(e); return; }
 
@@ -164,7 +164,7 @@ export function setupPatternEditor(vm) {
       delBtn.onclick = (e) => {
           e.stopPropagation();
           if (confirm(`Delete pattern "${p.name}"?`)) {
-              vm.eval(`$sequencer.delete_pattern("${p.id}")`);
+              App.eval(`$sequencer.delete_pattern("${p.id}")`, "DeletePattern");
               savePatterns();
               updatePatternList();
           }
@@ -186,7 +186,7 @@ export function setupPatternEditor(vm) {
     currentPatternId = id;
     let name = "";
     try {
-        const json = vm.eval(`$sequencer.get_patterns_json`).toString();
+        const json = App.eval(`$sequencer.get_patterns_json`, "GetPatternsLoad").toString();
         const patterns = JSON.parse(json);
         const p = patterns.find(x => x.id === id);
         if(p) name = p.name;
@@ -201,11 +201,11 @@ export function setupPatternEditor(vm) {
     const name = prompt("Enter pattern name:", "New Beat");
     if (name) {
       try {
-        const newPattern = vm.eval(`$sequencer.create_pattern("${name}")`);
+        App.eval(`$sequencer.create_pattern("${name}")`, "CreatePattern");
         savePatterns();
 
         // Select the new pattern (last one)
-        const json = vm.eval(`$sequencer.get_patterns_json`).toString();
+        const json = App.eval(`$sequencer.get_patterns_json`, "GetPatternsAfterCreate").toString();
         const patterns = JSON.parse(json);
         const last = patterns[patterns.length - 1];
         if (last) {
@@ -220,7 +220,7 @@ export function setupPatternEditor(vm) {
   patternNameInput.onchange = (e) => {
       if(!currentPatternId) return;
       // Update name in Ruby
-      vm.eval(`$sequencer.get_pattern("${currentPatternId}").name = "${e.target.value}"`);
+      App.eval(`$sequencer.get_pattern("${currentPatternId}").name = "${e.target.value}"`, "UpdatePatternName");
       savePatterns();
       updatePatternList();
   };
