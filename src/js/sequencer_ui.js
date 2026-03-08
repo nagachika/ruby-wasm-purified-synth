@@ -70,8 +70,11 @@ export function setupSequencer(vm) {
   let drawTrackIndex = -1;
   let ghostBlock = null;
 
+  // Cache for DOM elements to avoid full re-renders
+  const trackRowsCache = new Map(); // index -> { row, controlDiv, grid, ... }
+  const blockElementsCache = new Map(); // "trackIdx-startStep" -> { element, dataHash }
+
   function renderSequencer() {
-    rowsContainer.innerHTML = "";
     let tracksCount = 0;
     let currentTrackIndex = 0;
     let totalSteps = 128;
@@ -82,8 +85,10 @@ export function setupSequencer(vm) {
         totalSteps = parseInt(vm.eval("$sequencer.total_steps").toString());
     } catch(e) { return; }
 
-    const scrollContainer = document.getElementById("master-scroll-container") || document.createElement("div");
-    if (!scrollContainer.id) {
+    // Ensure master scroll container exists
+    let scrollContainer = document.getElementById("master-scroll-container");
+    if (!scrollContainer) {
+        scrollContainer = document.createElement("div");
         scrollContainer.id = "master-scroll-container";
         scrollContainer.style.overflowX = "scroll";
         scrollContainer.style.overflowY = "hidden";
@@ -92,184 +97,260 @@ export function setupSequencer(vm) {
         scrollContainer.style.border = "1px solid #444";
         scrollContainer.style.background = "#222";
         scrollContainer.style.height = "15px";
+
+        scrollContainer.onscroll = (e) => {
+            const left = e.target.scrollLeft;
+            document.querySelectorAll(".timeline-wrapper").forEach(wrapper => wrapper.scrollLeft = left);
+            window._lastScrollLeft = left;
+        };
     }
 
-    scrollContainer.innerHTML = "";
-    const scrollSpacer = document.createElement("div");
+    // Update scroll spacer width
+    let scrollSpacer = scrollContainer.querySelector(".scroll-spacer");
+    if (!scrollSpacer) {
+        scrollSpacer = document.createElement("div");
+        scrollSpacer.className = "scroll-spacer";
+        scrollSpacer.style.height = "1px";
+        scrollContainer.appendChild(scrollSpacer);
+    }
     scrollSpacer.style.width = `${totalSteps * CELL_WIDTH}px`;
-    scrollSpacer.style.height = "1px";
-    scrollContainer.appendChild(scrollSpacer);
 
-    scrollContainer.onscroll = (e) => {
-        const left = e.target.scrollLeft;
-        document.querySelectorAll(".timeline-wrapper").forEach(wrapper => wrapper.scrollLeft = left);
-        window._lastScrollLeft = left;
-    };
-
-    setTimeout(() => { if(window._lastScrollLeft) scrollContainer.scrollLeft = window._lastScrollLeft; }, 0);
+    // Remove tracks that no longer exist
+    for (const [tIdx, cached] of trackRowsCache.entries()) {
+        if (tIdx >= tracksCount) {
+            cached.row.remove();
+            trackRowsCache.delete(tIdx);
+            // Also clean up block cache for this track
+            for (const key of blockElementsCache.keys()) {
+                if (key.startsWith(`${tIdx}-`)) blockElementsCache.delete(key);
+            }
+        }
+    }
 
     for (let t = 0; t < tracksCount; t++) {
-        const row = document.createElement("div");
-        row.style.display = "flex";
-        row.style.gap = "0";
-        row.style.alignItems = "stretch";
-        row.style.marginBottom = "10px";
-        row.style.height = "80px";
-        row.style.flexShrink = "0";
-
-        // Check Track Type
+        let cached = trackRowsCache.get(t);
         let trackType = "melodic";
         try { trackType = vm.eval(`$sequencer.tracks[${t}].type`).toString(); } catch(e){}
 
-        // Track Controls
-        const controlDiv = document.createElement("div");
-        controlDiv.style.display = "flex";
-        controlDiv.style.flexDirection = "column";
-        controlDiv.style.width = "140px";
-        controlDiv.style.flexShrink = "0";
-        controlDiv.style.borderRight = "1px solid #555";
-        controlDiv.style.paddingRight = "10px";
-        controlDiv.style.marginRight = "10px";
-        controlDiv.style.justifyContent = "center";
-        controlDiv.style.gap = "5px";
+        if (!cached) {
+            const row = document.createElement("div");
+            row.style.display = "flex";
+            row.style.gap = "0";
+            row.style.alignItems = "stretch";
+            row.style.marginBottom = "10px";
+            row.style.height = "80px";
+            row.style.flexShrink = "0";
 
-        const labelBtn = document.createElement("button");
-        labelBtn.textContent = (trackType === "rhythmic" ? "🥁 " : "🎹 ") + `Track ${t + 1}`;
-        labelBtn.style.padding = "4px";
-        labelBtn.style.fontSize = "0.8rem";
-        labelBtn.style.border = "1px solid #555";
-        labelBtn.style.cursor = "pointer";
-        if (t === currentTrackIndex) {
-            labelBtn.style.background = "#007bff";
-            labelBtn.style.color = "white";
-        } else {
-            labelBtn.style.background = "#333";
-            labelBtn.style.color = "#ccc";
+            const controlDiv = document.createElement("div");
+            controlDiv.style.display = "flex";
+            controlDiv.style.flexDirection = "column";
+            controlDiv.style.width = "140px";
+            controlDiv.style.flexShrink = "0";
+            controlDiv.style.borderRight = "1px solid #555";
+            controlDiv.style.paddingRight = "10px";
+            controlDiv.style.marginRight = "10px";
+            controlDiv.style.justifyContent = "center";
+            controlDiv.style.gap = "5px";
+
+            const labelBtn = document.createElement("button");
+            labelBtn.style.padding = "4px";
+            labelBtn.style.fontSize = "0.8rem";
+            labelBtn.style.border = "1px solid #555";
+            labelBtn.style.cursor = "pointer";
+            labelBtn.onclick = () => selectTrack(t);
+
+            const presetSel = document.createElement("select");
+            presetSel.style.fontSize = "0.8rem";
+            presetSel.style.padding = "2px";
+            presetSel.style.width = "100%";
+
+            const removeBtn = document.createElement("button");
+            removeBtn.innerHTML = '<span class="material-icons" style="font-size: 1.2rem;">delete</span>';
+            removeBtn.style.padding = "4px";
+            removeBtn.style.background = "#dc3545";
+            removeBtn.style.color = "white";
+            removeBtn.style.border = "none";
+            removeBtn.style.cursor = "pointer";
+            removeBtn.onclick = () => removeTrack(t);
+
+            const muteBtn = document.createElement("button");
+            muteBtn.style.padding = "4px";
+            muteBtn.style.color = "white";
+            muteBtn.style.border = "1px solid #555";
+            muteBtn.style.cursor = "pointer";
+
+            const soloBtn = document.createElement("button");
+            soloBtn.style.padding = "4px";
+            soloBtn.style.border = "1px solid #555";
+            soloBtn.style.cursor = "pointer";
+
+            const arpBtn = document.createElement("button");
+            arpBtn.style.padding = "4px";
+            arpBtn.style.border = "1px solid #555";
+
+            const knobContainer = document.createElement("div");
+            knobContainer.style.display = "flex";
+            knobContainer.style.alignItems = "center";
+            knobContainer.style.justifyContent = "center";
+            knobContainer.style.cursor = "ns-resize";
+            knobContainer.title = "Volume";
+            const knobIcon = document.createElement("span");
+            knobIcon.className = "material-icons";
+            knobIcon.textContent = "arrow_circle_up";
+            knobIcon.style.fontSize = "1.5rem";
+            knobIcon.style.color = "#4dabf7";
+            knobContainer.appendChild(knobIcon);
+
+            const btnRow = document.createElement("div");
+            btnRow.style.display = "flex";
+            btnRow.style.gap = "2px";
+            btnRow.appendChild(removeBtn);
+            btnRow.appendChild(muteBtn);
+            btnRow.appendChild(soloBtn);
+            btnRow.appendChild(arpBtn);
+            btnRow.appendChild(knobContainer);
+
+            controlDiv.appendChild(labelBtn);
+            controlDiv.appendChild(presetSel);
+            controlDiv.appendChild(btnRow);
+            row.appendChild(controlDiv);
+
+            const timelineWrapper = document.createElement("div");
+            timelineWrapper.className = "timeline-wrapper";
+            timelineWrapper.style.flexGrow = "1";
+            timelineWrapper.style.overflowX = "hidden";
+            timelineWrapper.style.overflowY = "hidden";
+            timelineWrapper.style.position = "relative";
+            timelineWrapper.style.background = "#222";
+            timelineWrapper.style.border = "1px solid #444";
+
+            const grid = document.createElement("div");
+            grid.className = "timeline-grid";
+            grid.style.height = "100%";
+            grid.style.position = "relative";
+            grid.dataset.track = t;
+
+            timelineWrapper.appendChild(grid);
+            row.appendChild(timelineWrapper);
+
+            // Insert before the scroll row if it exists, or just append
+            const scrollRowEl = document.getElementById("sequencer-scroll-row");
+            if (scrollRowEl) {
+                rowsContainer.insertBefore(row, scrollRowEl);
+            } else {
+                rowsContainer.appendChild(row);
+            }
+
+            cached = {
+                row, controlDiv, grid, labelBtn, presetSel, muteBtn, soloBtn, arpBtn, knobIcon, knobContainer, trackType: null
+            };
+            trackRowsCache.set(t, cached);
         }
-        labelBtn.onclick = () => selectTrack(t);
 
-        // Preset Selector (Only for Melodic for now? Or Drum Kit selection?)
-        const presetSel = document.createElement("select");
-        presetSel.style.fontSize = "0.8rem";
-        presetSel.style.padding = "2px";
-        presetSel.style.width = "100%";
-        if (trackType === "melodic") {
-            const presets = getPresets();
-            presetSel.innerHTML = '<option value="">(Default)</option>';
-            Object.keys(presets).forEach(name => {
-                const opt = document.createElement("option");
-                opt.value = name;
-                opt.textContent = name;
-                presetSel.appendChild(opt);
-            });
-            try {
-                presetSel.value = vm.eval(`$sequencer.tracks[${t}].preset_name`).toString();
-            } catch(e) {}
-            presetSel.onchange = (e) => {
-                const name = e.target.value;
-                if (name && presets[name]) {
-                    window._tempTrackPresetJson = presets[name];
-                    const data = JSON.parse(presets[name]);
-                    if (data.nodes) {
+        // Update Track Content & State
+        const row = cached.row;
+        const grid = cached.grid;
+
+        // Type-specific UI update
+        if (cached.trackType !== trackType) {
+            cached.labelBtn.textContent = (trackType === "rhythmic" ? "🥁 " : "🎹 ") + `Track ${t + 1}`;
+            if (trackType === "melodic") {
+                const presets = getPresets();
+                cached.presetSel.disabled = false;
+                cached.presetSel.innerHTML = '<option value="">(Default)</option>';
+                Object.keys(presets).forEach(name => {
+                    const opt = document.createElement("option");
+                    opt.value = name;
+                    opt.textContent = name;
+                    cached.presetSel.appendChild(opt);
+                });
+                cached.presetSel.onchange = (e) => {
+                    const name = e.target.value;
+                    if (name && presets[name]) {
+                        window._tempTrackPresetJson = presets[name];
                         vm.eval(`$sequencer.tracks[${t}].synth.import_patch(JS.global[:_tempTrackPresetJson])`);
                         vm.eval(`$sequencer.tracks[${t}].preset_name = "${name}"`);
-                    } else {
-                        console.warn("Legacy preset format is no longer supported in sequencer.");
                     }
-                }
-            };
-        } else {
-            presetSel.disabled = true;
-            presetSel.innerHTML = '<option>Drum Kit</option>';
+                };
+                cached.arpBtn.style.cursor = "pointer";
+                cached.arpBtn.style.opacity = "1";
+                cached.arpBtn.title = "Arpeggiator ON/OFF";
+            } else {
+                cached.presetSel.disabled = true;
+                cached.presetSel.innerHTML = '<option>Drum Kit</option>';
+                cached.arpBtn.style.cursor = "default";
+                cached.arpBtn.style.opacity = "0.3";
+                cached.arpBtn.title = "";
+            }
+            cached.trackType = trackType;
         }
 
-        const removeBtn = document.createElement("button");
-        removeBtn.innerHTML = '<span class="material-icons" style="font-size: 1.2rem;">delete</span>';
-        removeBtn.style.padding = "4px";
-        removeBtn.style.background = "#dc3545";
-        removeBtn.style.color = "white";
-        removeBtn.style.border = "none";
-        removeBtn.style.cursor = "pointer";
-        removeBtn.onclick = () => removeTrack(t);
+        // Selection
+        if (t === currentTrackIndex) {
+            cached.labelBtn.style.background = "#007bff";
+            cached.labelBtn.style.color = "white";
+        } else {
+            cached.labelBtn.style.background = "#333";
+            cached.labelBtn.style.color = "#ccc";
+        }
 
-        const muteBtn = document.createElement("button");
-        let isMuted = false;
-        try { isMuted = vm.eval(`$sequencer.tracks[${t}].mute`).toString() === "true"; } catch(e) {}
-        muteBtn.innerHTML = `<span class="material-icons" style="font-size: 1.2rem;">${isMuted ? "volume_off" : "volume_up"}</span>`;
-        muteBtn.style.padding = "4px";
-        muteBtn.style.background = isMuted ? "#6c757d" : "#444";
-        muteBtn.style.color = "white";
-        muteBtn.style.border = "1px solid #555";
-        muteBtn.style.cursor = "pointer";
-        muteBtn.onclick = () => {
+        // Preset Value
+        if (trackType === "melodic") {
+            try { cached.presetSel.value = vm.eval(`$sequencer.tracks[${t}].preset_name`).toString(); } catch(e) {}
+        }
+
+        // Mute/Solo
+        let isMuted = false, isSolo = false;
+        try {
+            isMuted = vm.eval(`$sequencer.tracks[${t}].mute`).toString() === "true";
+            isSolo = vm.eval(`$sequencer.tracks[${t}].solo`).toString() === "true";
+        } catch(e) {}
+
+        cached.muteBtn.innerHTML = `<span class="material-icons" style="font-size: 1.2rem;">${isMuted ? "volume_off" : "volume_up"}</span>`;
+        cached.muteBtn.style.background = isMuted ? "#6c757d" : "#444";
+        cached.muteBtn.onclick = () => {
             vm.eval(`$sequencer.tracks[${t}].mute = ${!isMuted}`);
             renderSequencer();
         };
 
-        const soloBtn = document.createElement("button");
-        let isSolo = false;
-        try { isSolo = vm.eval(`$sequencer.tracks[${t}].solo`).toString() === "true"; } catch(e) {}
-        soloBtn.innerHTML = `<span class="material-icons" style="font-size: 1.2rem;">${isSolo ? "grade" : "star_outline"}</span>`;
-        soloBtn.style.padding = "4px";
-        soloBtn.style.background = isSolo ? "#fcc419" : "#444";
-        soloBtn.style.color = isSolo ? "black" : "white";
-        soloBtn.style.border = "1px solid #555";
-        soloBtn.style.cursor = "pointer";
-        soloBtn.onclick = () => {
+        cached.soloBtn.innerHTML = `<span class="material-icons" style="font-size: 1.2rem;">${isSolo ? "grade" : "star_outline"}</span>`;
+        cached.soloBtn.style.background = isSolo ? "#fcc419" : "#444";
+        cached.soloBtn.style.color = isSolo ? "black" : "white";
+        cached.soloBtn.onclick = () => {
             vm.eval(`$sequencer.tracks[${t}].solo = ${!isSolo}`);
             renderSequencer();
         };
 
-        // Arpeggiator Toggle Button (Melodic only)
-        // TODO: Find more intuitive icons for Arpeggiator state.
-        // Currently using 'dehaze' (stacked) for Off and 'clear_all' (staggered) for On.
-        const arpBtn = document.createElement("button");
-        let isArp = false;
+        // Arp
         if (trackType === "melodic") {
+            let isArp = false;
             try { isArp = vm.eval(`$sequencer.get_arpeggiator_status(${t})`).toString() === "true"; } catch(e) {}
-            arpBtn.innerHTML = `<span class="material-icons" style="font-size: 1.2rem;">${isArp ? "clear_all" : "dehaze"}</span>`;
-            arpBtn.style.background = isArp ? "#4dabf7" : "#444";
-            arpBtn.style.color = isArp ? "white" : "#ccc";
-            arpBtn.style.cursor = "pointer";
-            arpBtn.title = "Arpeggiator ON/OFF";
-            arpBtn.onclick = () => {
+            cached.arpBtn.innerHTML = `<span class="material-icons" style="font-size: 1.2rem;">${isArp ? "clear_all" : "dehaze"}</span>`;
+            cached.arpBtn.style.background = isArp ? "#4dabf7" : "#444";
+            cached.arpBtn.style.color = isArp ? "white" : "#ccc";
+            cached.arpBtn.onclick = () => {
                 vm.eval(`$sequencer.set_arpeggiator_enabled(${t}, ${!isArp})`);
                 renderSequencer();
             };
         } else {
-            arpBtn.innerHTML = `<span class="material-icons" style="font-size: 1.2rem;">dehaze</span>`;
-            arpBtn.style.background = "#222";
-            arpBtn.style.color = "#555";
-            arpBtn.style.cursor = "default";
-            arpBtn.style.opacity = "0.3";
+            cached.arpBtn.innerHTML = `<span class="material-icons" style="font-size: 1.2rem;">dehaze</span>`;
+            cached.arpBtn.style.background = "#222";
+            cached.arpBtn.style.color = "#555";
+            cached.arpBtn.onclick = null;
         }
-        arpBtn.style.padding = "4px";
-        arpBtn.style.border = "1px solid #555";
 
-        const knobContainer = document.createElement("div");
-        knobContainer.style.display = "flex";
-        knobContainer.style.alignItems = "center";
-        knobContainer.style.justifyContent = "center";
-        knobContainer.style.cursor = "ns-resize";
-        knobContainer.title = "Volume";
-        const knobIcon = document.createElement("span");
-        knobIcon.className = "material-icons";
-        knobIcon.textContent = "arrow_circle_up";
-        knobIcon.style.fontSize = "1.5rem";
-        knobIcon.style.color = "#4dabf7";
+        // Volume
         let currentVol = 1.0;
         try { currentVol = parseFloat(vm.eval(`$sequencer.tracks[${t}].volume`).toString()); } catch(e) {}
-        knobIcon.style.transform = `rotate(${(currentVol - 1.0) * 160}deg)`;
-        knobContainer.appendChild(knobIcon);
-
-        knobContainer.onmousedown = (e) => {
+        cached.knobIcon.style.transform = `rotate(${(currentVol - 1.0) * 160}deg)`;
+        cached.knobContainer.onmousedown = (e) => {
             const startY = e.clientY;
             const startVol = currentVol;
             const onMove = (me) => {
                 let nv = startVol + (startY - me.clientY) / 100;
                 if(nv < 0) nv = 0; if(nv > 2) nv = 2;
                 vm.eval(`$sequencer.tracks[${t}].volume = ${nv}`);
-                knobIcon.style.transform = `rotate(${(nv - 1.0) * 160}deg)`;
+                cached.knobIcon.style.transform = `rotate(${(nv - 1.0) * 160}deg)`;
             };
             const onUp = () => {
                 window.removeEventListener("mousemove", onMove);
@@ -279,38 +360,11 @@ export function setupSequencer(vm) {
             window.addEventListener("mouseup", onUp);
         };
 
-        const btnRow = document.createElement("div");
-        btnRow.style.display = "flex";
-        btnRow.style.gap = "2px";
-        btnRow.appendChild(removeBtn);
-        btnRow.appendChild(muteBtn);
-        btnRow.appendChild(soloBtn);
-        btnRow.appendChild(arpBtn);
-        btnRow.appendChild(knobContainer);
-
-        controlDiv.appendChild(labelBtn);
-        controlDiv.appendChild(presetSel);
-        controlDiv.appendChild(btnRow);
-        row.appendChild(controlDiv);
-
-        const timelineWrapper = document.createElement("div");
-        timelineWrapper.className = "timeline-wrapper";
-        timelineWrapper.style.flexGrow = "1";
-        timelineWrapper.style.overflowX = "hidden";
-        timelineWrapper.style.overflowY = "hidden";
-        timelineWrapper.style.position = "relative";
-        timelineWrapper.style.background = "#222";
-        timelineWrapper.style.border = "1px solid #444";
-
-        const grid = document.createElement("div");
-        grid.className = "timeline-grid";
+        // Grid Background & Width
         grid.style.width = `${totalSteps * CELL_WIDTH}px`;
-        grid.style.height = "100%";
-        grid.style.position = "relative";
-        grid.dataset.track = t;
         grid.style.backgroundImage = `repeating-linear-gradient(90deg,#888 0px,#888 1px,transparent 1px,transparent ${CELL_WIDTH * 32}px),repeating-linear-gradient(90deg,#555 0px,#555 1px,transparent 1px,transparent ${CELL_WIDTH * 8}px),repeating-linear-gradient(90deg,#333 0px,#333 1px,transparent 1px,transparent ${CELL_WIDTH}px)`;
 
-        // Mouse Draw
+        // Grid Events (re-bind to ensure index is correct if tracks shifted, though typically they don't)
         grid.onmousedown = (e) => {
             if (e.target.classList.contains("block") || e.target.tagName === "CANVAS") return;
             isDrawing = true;
@@ -334,25 +388,39 @@ export function setupSequencer(vm) {
             ghostBlock.style.width = `${len * CELL_WIDTH}px`;
         };
 
-        // Render Blocks
+        // Sync Blocks
         try {
             const blocksJson = vm.eval(`$sequencer.get_track_blocks_json(${t})`).toString();
             const blocks = JSON.parse(blocksJson);
+            const currentBlockKeys = new Set();
+
             blocks.forEach(b => {
+                const key = `${t}-${b.start}`;
+                currentBlockKeys.add(key);
+                const cachedBlock = blockElementsCache.get(key);
+
+                // Simple hash to detect changes (start, length, content-specifics)
+                const dataHash = JSON.stringify({
+                    len: b.length,
+                    chord: b.chord_name,
+                    pid: b.pattern_id,
+                    notes_count: b.notes_count
+                });
+
+                if (cachedBlock && cachedBlock.dataHash === dataHash) {
+                    // No change
+                    return;
+                }
+
+                // Update or Create
+                if (cachedBlock) cachedBlock.element.remove();
+
                 const blockDiv = document.createElement("div");
                 blockDiv.className = "block";
                 blockDiv.style.position = "absolute";
                 blockDiv.style.left = `${b.start * CELL_WIDTH}px`;
                 blockDiv.style.width = `${b.length * CELL_WIDTH}px`;
                 blockDiv.style.height = "100%";
-
-                // Color separation
-                if (trackType === "rhythmic") {
-                    blockDiv.style.background = "#ff8787"; // Reddish for drums
-                } else {
-                    blockDiv.style.background = b.notes_count > 0 ? "#4dabf7" : "#555";
-                }
-
                 blockDiv.style.border = "1px solid #fff";
                 blockDiv.style.borderRadius = "4px";
                 blockDiv.style.cursor = "pointer";
@@ -362,7 +430,20 @@ export function setupSequencer(vm) {
                 blockDiv.style.justifyContent = "center";
                 blockDiv.style.overflow = "hidden";
 
-                if (trackType === "melodic") {
+                if (trackType === "rhythmic") {
+                    blockDiv.style.background = "#ff8787";
+                    let pName = b.pattern_id;
+                    try { pName = vm.eval(`$sequencer.get_pattern_name("${b.pattern_id}")`).toString(); } catch(e) {}
+                    blockDiv.innerText = pName;
+                    blockDiv.style.color = "black";
+                    blockDiv.style.fontSize = "0.8rem";
+                    blockDiv.style.fontWeight = "bold";
+                    blockDiv.onclick = (e) => {
+                        e.stopPropagation();
+                        openPatternSelector(t, b.start, b.pattern_id);
+                    };
+                } else {
+                    blockDiv.style.background = b.notes_count > 0 ? "#4dabf7" : "#555";
                     blockDiv.title = b.chord_name || `Start: ${b.start}`;
                     const canvas = document.createElement("canvas");
                     const cw = b.length * CELL_WIDTH - 4;
@@ -376,27 +457,9 @@ export function setupSequencer(vm) {
                         drawTetrisShape(canvas.getContext("2d"), notes, cw, ch);
                     } catch(e){}
                     blockDiv.appendChild(canvas);
-
                     blockDiv.onclick = (e) => {
                         e.stopPropagation();
                         openChordSelector(t, b.start);
-                    };
-
-                } else if (trackType === "rhythmic") {
-                     // Get pattern name
-                     let pName = b.pattern_id;
-                     try {
-                         pName = vm.eval(`$sequencer.get_pattern_name("${b.pattern_id}")`).toString();
-                     } catch(e) {}
-
-                     blockDiv.innerText = pName;
-                     blockDiv.style.color = "black";
-                     blockDiv.style.fontSize = "0.8rem";
-                     blockDiv.style.fontWeight = "bold";
-
-                     blockDiv.onclick = (e) => {
-                        e.stopPropagation();
-                        openPatternSelector(t, b.start, b.pattern_id);
                     };
                 }
 
@@ -407,24 +470,36 @@ export function setupSequencer(vm) {
                         renderSequencer();
                     }
                 };
-                grid.appendChild(blockDiv);
-            });
-        } catch(e){}
 
-        timelineWrapper.appendChild(grid);
-        row.appendChild(timelineWrapper);
-        rowsContainer.appendChild(row);
+                grid.appendChild(blockDiv);
+                blockElementsCache.set(key, { element: blockDiv, dataHash });
+            });
+
+            // Cleanup removed blocks
+            for (const [key, cachedBlock] of blockElementsCache.entries()) {
+                if (key.startsWith(`${t}-`) && !currentBlockKeys.has(key)) {
+                    cachedBlock.element.remove();
+                    blockElementsCache.delete(key);
+                }
+            }
+        } catch(e){ console.error(e); }
     } // end tracks loop
 
-    // Append master scroll
-    const scrollRow = document.createElement("div");
-    scrollRow.style.display = "flex";
-    const spacer = document.createElement("div");
-    spacer.style.width = "150px"; spacer.style.flexShrink = "0";
-    scrollContainer.style.flexGrow = "1";
-    scrollRow.appendChild(spacer);
-    scrollRow.appendChild(scrollContainer);
-    rowsContainer.appendChild(scrollRow);
+    // Append master scroll if not present
+    let scrollRow = document.getElementById("sequencer-scroll-row");
+    if (!scrollRow) {
+        scrollRow = document.createElement("div");
+        scrollRow.id = "sequencer-scroll-row";
+        scrollRow.style.display = "flex";
+        const spacer = document.createElement("div");
+        spacer.style.width = "150px"; spacer.style.flexShrink = "0";
+        scrollRow.appendChild(spacer);
+        scrollRow.appendChild(scrollContainer);
+        rowsContainer.appendChild(scrollRow);
+    }
+
+    // Restore scroll position after potential track changes
+    setTimeout(() => { if(window._lastScrollLeft) scrollContainer.scrollLeft = window._lastScrollLeft; }, 0);
   } // end renderSequencer
 
   function selectTrack(t) {
