@@ -68,9 +68,7 @@ class ModularEditor {
 
     this.svg = this.container.append("svg")
       .attr("width", "100%")
-      .attr("height", "100%")
-      .style("background", "#1a1a1a")
-      .style("display", "block");
+      .attr("height", "100%");
 
     // Arrow marker for connections
     this.svg.append("defs").append("marker")
@@ -82,8 +80,8 @@ class ModularEditor {
       .attr("markerWidth", 6)
       .attr("markerHeight", 6)
       .append("path")
-      .attr("d", "M0,-5L10,0L0,5")
-      .attr("fill", "#888");
+      .attr("class", "arrowhead-path")
+      .attr("d", "M0,-5L10,0L0,5");
 
     this.edgeGroup = this.svg.append("g").attr("class", "edges");
     this.nodeGroup = this.svg.append("g").attr("class", "nodes");
@@ -91,26 +89,12 @@ class ModularEditor {
     // Auto Layout Button
     this.container.append("button")
       .text("Auto Layout")
-      .style("position", "absolute")
-      .style("top", "10px")
-      .style("right", "10px")
-      .style("z-index", "100")
-      .style("padding", "5px 10px")
-      .style("background", "#444")
-      .style("color", "#fff")
-      .style("border", "none")
-      .style("border-radius", "4px")
-      .style("cursor", "pointer")
+      .attr("class", "auto-layout-btn")
       .on("click", () => this.autoLayout());
 
     // Drag line for creating new connections
     this.dragLine = this.svg.append("line")
-      .attr("class", "drag-line")
-      .attr("stroke", "#4dabf7")
-      .attr("stroke-width", 2)
-      .attr("stroke-dasharray", "5,5")
-      .style("display", "none")
-      .style("pointer-events", "none"); // Let events pass through to target ports
+      .attr("class", "drag-line"); // Let events pass through to target ports
 
     this.svg.on("mousemove", (e) => this.onMouseMove(e))
             .on("mouseup", () => this.onMouseUp())
@@ -142,27 +126,10 @@ class ModularEditor {
   createParamEditor() {
     this.paramEditor = d3.select("body").append("div")
       .attr("class", "param-editor")
-      .style("position", "fixed")
-      .style("top", "50%")
-      .style("left", "50%")
-      .style("transform", "translate(-50%, -50%)")
-      .style("background", "#333")
-      .style("border", "1px solid #555")
-      .style("border-radius", "8px")
-      .style("padding", "20px")
-      .style("z-index", "2000")
-      .style("display", "none")
-      .style("color", "#fff")
-      .style("box-shadow", "0 0 20px rgba(0,0,0,0.5)");
+      .style("display", "none");
 
     this.paramEditorOverlay = d3.select("body").append("div")
-      .style("position", "fixed")
-      .style("top", "0")
-      .style("left", "0")
-      .style("width", "100%")
-      .style("height", "100%")
-      .style("background", "rgba(0,0,0,0.5)")
-      .style("z-index", "1900")
+      .attr("class", "param-editor-overlay")
       .style("display", "none")
       .on("click", () => this.hideParamEditor());
   }
@@ -171,16 +138,14 @@ class ModularEditor {
     if (node.type === "Destination") return;
 
     this.paramEditor.html("");
-    this.paramEditor.append("h3").text(`Edit Node`).style("margin-top", "0");
+    this.paramEditor.append("h3").text(`Edit Node`);
 
     // Node ID (Name)
-    const idRow = this.paramEditor.append("div").style("margin-bottom", "10px");
-    idRow.append("label").text("Node ID: ").style("display", "block").style("font-size", "12px").style("color", "#aaa");
+    const idRow = this.paramEditor.append("div").attr("class", "param-editor-row");
+    idRow.append("label").text("Node ID: ");
     idRow.append("input")
       .attr("type", "text")
       .attr("value", node.id)
-      .style("width", "100%")
-      .style("padding", "5px")
       .on("change", (event) => {
          const newId = event.target.value.trim();
          if (newId && newId !== node.id) {
@@ -205,8 +170,8 @@ class ModularEditor {
 
     // Frequency tracking toggle for Oscillators
     if (node.type === "Oscillator") {
-      const row = this.paramEditor.append("div").style("margin-bottom", "10px");
-      row.append("label").text("Keyboard Tracking: ").style("margin-right", "10px");
+      const row = this.paramEditor.append("div").attr("class", "param-editor-row inline");
+      row.append("label").text("Keyboard Tracking: ");
       row.append("input")
         .attr("type", "checkbox")
         .property("checked", node.freq_track)
@@ -219,14 +184,12 @@ class ModularEditor {
     const typeInfo = NODE_TYPES[node.type];
     Object.keys(typeInfo.initParams).forEach(param => {
       const val = node.params[param];
-      const row = this.paramEditor.append("div").style("margin-bottom", "10px");
-      row.append("label").text(param + ": ").style("display", "block").style("font-size", "12px").style("color", "#aaa");
+      const row = this.paramEditor.append("div").attr("class", "param-editor-row");
+      row.append("label").text(param + ": ");
 
       let input;
       if (param === "type" && (node.type === "Oscillator" || node.type === "BiquadFilter")) {
          input = row.append("select")
-           .style("width", "100%")
-           .style("padding", "5px")
            .on("change", function() {
               node.params[param] = this.value;
               editor.syncToRuby();
@@ -244,8 +207,6 @@ class ModularEditor {
            .attr("type", typeof val === "number" ? "number" : "text")
            .attr("step", "any")
            .attr("value", val)
-           .style("width", "100%")
-           .style("padding", "5px")
            .on("change", function() {
               const newVal = (this.type === "number") ? parseFloat(this.value) : this.value;
               node.params[param] = newVal;
@@ -267,13 +228,7 @@ class ModularEditor {
   createContextMenu() {
     this.contextMenu = d3.select("body").append("div")
       .attr("class", "context-menu")
-      .style("position", "absolute")
-      .style("background", "#333")
-      .style("border", "1px solid #555")
-      .style("border-radius", "4px")
-      .style("padding", "5px")
-      .style("display", "none")
-      .style("z-index", "1000");
+      .style("display", "none");
   }
 
   showContextMenu(pageX, pageY, nodeX, nodeY, item = null) {
@@ -284,12 +239,7 @@ class ModularEditor {
       items.forEach(type => {
         this.contextMenu.append("div")
           .text("Add " + type)
-          .style("padding", "5px 10px")
-          .style("cursor", "pointer")
-          .style("color", "#eee")
-          .style("font-size", "14px")
-          .on("mouseenter", function() { d3.select(this).style("background", "#444"); })
-          .on("mouseleave", function() { d3.select(this).style("background", "none"); })
+          .attr("class", "context-menu-item")
           .on("click", () => {
              this.addNode(type, nodeX, nodeY);
              this.hideContextMenu();
@@ -300,12 +250,7 @@ class ModularEditor {
       if (node && node.type !== 'Destination') {
         this.contextMenu.append("div")
           .text("Delete Node")
-          .style("padding", "5px 10px")
-          .style("cursor", "pointer")
-          .style("color", "#ff6b6b")
-          .style("font-size", "14px")
-          .on("mouseenter", function() { d3.select(this).style("background", "#444"); })
-          .on("mouseleave", function() { d3.select(this).style("background", "none"); })
+          .attr("class", "context-menu-item delete")
           .on("click", (e) => {
              e.stopPropagation();
              this.select(item);
@@ -315,12 +260,7 @@ class ModularEditor {
       }
       this.contextMenu.append("div")
         .text("Edit Parameters")
-        .style("padding", "5px 10px")
-        .style("cursor", "pointer")
-        .style("color", "#eee")
-        .style("font-size", "14px")
-        .on("mouseenter", function() { d3.select(this).style("background", "#444"); })
-        .on("mouseleave", function() { d3.select(this).style("background", "none"); })
+        .attr("class", "context-menu-item")
         .on("click", (e) => {
            e.stopPropagation();
            this.showParamEditor(node);
@@ -329,12 +269,7 @@ class ModularEditor {
     } else if (item.type === 'edge') {
       this.contextMenu.append("div")
         .text("Delete Connection")
-        .style("padding", "5px 10px")
-        .style("cursor", "pointer")
-        .style("color", "#ff6b6b")
-        .style("font-size", "14px")
-        .on("mouseenter", function() { d3.select(this).style("background", "#444"); })
-        .on("mouseleave", function() { d3.select(this).style("background", "none"); })
+        .attr("class", "context-menu-item delete")
         .on("click", (e) => {
            e.stopPropagation();
            this.select(item);
@@ -580,9 +515,6 @@ class ModularEditor {
       .attr("width", 140)
       .attr("height", d => this.getNodeHeight(d))
       .attr("rx", 5)
-      .attr("fill", "#333")
-      .attr("stroke", d => (editor.selected && editor.selected.type === 'node' && editor.selected.id === d.id) ? "#4dabf7" : "#555")
-      .attr("stroke-width", 2)
       .on("click", function(event, d) {
         event.stopPropagation();
         editor.select({ type: 'node', id: d.id });
@@ -602,18 +534,12 @@ class ModularEditor {
       .attr("class", "node-label")
       .attr("x", 10)
       .attr("y", 20)
-      .attr("fill", "#fff")
-      .style("font-weight", "bold")
-      .style("pointer-events", "none")
       .text(d => d.id.toUpperCase());
 
     nodeEnter.append("text")
       .attr("class", "node-type")
       .attr("x", 10)
       .attr("y", 35)
-      .attr("fill", "#aaa")
-      .style("font-size", "10px")
-      .style("pointer-events", "none")
       .text(d => d.type);
 
     // Ports
@@ -628,9 +554,6 @@ class ModularEditor {
                 .attr("cx", 140)
                 .attr("cy", 20)
                 .attr("r", 6)
-                .attr("fill", "#4dabf7")
-                .attr("stroke", "#222")
-                .attr("stroke-width", 1)
                 .on("mousedown", function(event) {
                    event.stopPropagation();
                    const [mx, my] = d3.pointer(event, editor.svg.node());
@@ -646,9 +569,6 @@ class ModularEditor {
                 .attr("cx", 0)
                 .attr("cy", y)
                 .attr("r", 6)
-                .attr("fill", "#ffffb0") // Cream color
-                .attr("stroke", "#222")
-                .attr("stroke-width", 1)
                 .on("mouseup", function(event) {
                    event.stopPropagation();
                    editor.completeConnection(d.id, null);
@@ -664,9 +584,6 @@ class ModularEditor {
                 .attr("cx", 0)
                 .attr("cy", y)
                 .attr("r", 6)
-                .attr("fill", "#f06595")
-                .attr("stroke", "#222")
-                .attr("stroke-width", 1)
                 .attr("data-port", input)
                 .on("mouseup", function(event) {
                    event.stopPropagation();
@@ -674,23 +591,16 @@ class ModularEditor {
                 });
 
               g.append("text")
+                .attr("class", "port-label")
                 .attr("x", 12)
                 .attr("y", y + 4)
-                .attr("fill", "#eee")
-                .style("font-size", "10px")
-                .style("pointer-events", "none")
                 .text(input);
             });
-
-            // Special input for Destination - Now handled via generic hasInput logic above,
-            // but strictly Destination has hasInput=true inputs=[], so the loop above won't run.
-            // We just need to ensure the standard logic covers it.
-            // Destination hasInput=true, so it gets AUDIO IN at y=45.
-            // That's fine. We can remove the special block below.
           });
 
           nodes.merge(nodeEnter)
-            .attr("transform", d => `translate(${d.x},${d.y})`);
+            .attr("transform", d => `translate(${d.x},${d.y})`)
+            .classed("selected", d => (editor.selected && editor.selected.type === 'node' && editor.selected.id === d.id));
         }
   getNodeHeight(d) {
     const typeInfo = NODE_TYPES[d.type];
@@ -739,9 +649,6 @@ class ModularEditor {
 
     edges.enter().append("line")
       .attr("class", "edge")
-      .attr("stroke", d => (this.selected && this.selected.type === 'edge' && this.selected.id === d.id) ? "#f06595" : "#888")
-      .attr("stroke-width", 3)
-      .attr("cursor", "pointer")
       .attr("marker-end", "url(#arrowhead)")
       .on("click", function(event, d) {
         event.stopPropagation();
@@ -754,7 +661,7 @@ class ModularEditor {
         editor.showContextMenu(event.pageX, event.pageY, x, y, { type: 'edge', id: d.id });
       })
       .merge(edges)
-      .attr("stroke", d => (this.selected && this.selected.type === 'edge' && this.selected.id === d.id) ? "#f06595" : "#888")
+      .classed("selected", d => (this.selected && this.selected.type === 'edge' && this.selected.id === d.id))
       .attr("x1", d => d.x1)
       .attr("y1", d => d.y1)
       .attr("x2", d => d.x2)

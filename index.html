@@ -47,6 +47,68 @@
     #start-btn { padding: 20px 40px; font-size: 1.5rem; cursor: pointer; border-radius: 8px; border: none; background: #007bff; color: white; box-shadow: 0 0 20px rgba(0,123,255,0.5); }
 
     .keyboard-hint { grid-column: 1 / -1; text-align: center; margin-top: 20px; color: #888; }
+
+    /* Modular Editor Styles */
+    #modular-editor svg { background: #1a1a1a; display: block; }
+    #modular-editor .arrowhead-path { fill: #888; }
+
+    .auto-layout-btn {
+      position: absolute; top: 10px; right: 10px; z-index: 100;
+      padding: 5px 10px; background: #444; color: #fff;
+      border: none; border-radius: 4px; cursor: pointer;
+    }
+    .auto-layout-btn:hover { background: #555; }
+
+    .drag-line {
+      stroke: #4dabf7; stroke-width: 2; stroke-dasharray: 5,5;
+      display: none; pointer-events: none;
+    }
+
+    .param-editor {
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      background: #333; border: 1px solid #555; border-radius: 8px;
+      padding: 20px; z-index: 2000; display: none; color: #fff;
+      box-shadow: 0 0 20px rgba(0,0,0,0.5);
+    }
+    .param-editor h3 { margin-top: 0; }
+    .param-editor-row { margin-bottom: 10px; }
+    .param-editor-row label { display: block; font-size: 12px; color: #aaa; margin-bottom: 5px; }
+    .param-editor-row input, .param-editor-row select { width: 100%; padding: 5px; box-sizing: border-box; }
+    .param-editor-row.inline label { display: inline; margin-right: 10px; }
+    .param-editor-row.inline input { width: auto; }
+
+    .param-editor-overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.5); z-index: 1900; display: none;
+    }
+
+    .context-menu {
+      position: absolute; background: #333; border: 1px solid #555;
+      border-radius: 4px; padding: 5px; display: none; z-index: 1000;
+    }
+    .context-menu-item {
+      padding: 5px 10px; cursor: pointer; color: #eee; font-size: 14px;
+    }
+    .context-menu-item:hover { background: #444; }
+    .context-menu-item.delete { color: #ff6b6b; }
+
+    .node rect {
+      fill: #333; stroke: #555; stroke-width: 2; cursor: move;
+    }
+    .node.selected rect { stroke: #4dabf7; }
+    .node-label { fill: #fff; font-weight: bold; pointer-events: none; }
+    .node-type { fill: #aaa; font-size: 10px; pointer-events: none; }
+
+    .port { stroke: #222; stroke-width: 1; cursor: crosshair; }
+    .port.output { fill: #4dabf7; }
+    .port.input-main { fill: #ffffb0; }
+    .port.input-param { fill: #f06595; }
+    .port-label { fill: #eee; font-size: 10px; pointer-events: none; }
+
+    .edge {
+      stroke: #888; stroke-width: 3; cursor: pointer;
+    }
+    .edge.selected { stroke: #f06595; }
   </style>
   <script type="importmap">
     {
