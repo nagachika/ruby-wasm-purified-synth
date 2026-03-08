@@ -4,7 +4,7 @@ import { getPresets } from "./presets.js";
 
 let currentChordName = "";
 let currentChordNotes = [];
-let chordSelectedCell = null;
+let chordSelectedCell = {x: 0, y: 0};
 
 export function setupChordView(vm) {
   const nameInput = document.getElementById("chord-name-input");
@@ -71,6 +71,7 @@ export function setupChordView(vm) {
   createBtn.onclick = () => {
     currentChordName = "";
     currentChordNotes = [];
+    chordSelectedCell = {x: 0, y: 0};
     nameInput.value = "";
     renderChordEditor(vm);
   };
@@ -154,6 +155,7 @@ export function setupChordView(vm) {
         currentChordName = name;
         // Deep copy notes
         currentChordNotes = JSON.parse(JSON.stringify(notes));
+        chordSelectedCell = {x: 0, y: 0};
 
         // Restore dimension
         if (dim) {
@@ -177,37 +179,39 @@ export function setupChordView(vm) {
     });
   }
 
+  function toggleNote(x, y) {
+    const dim = parseInt(yAxisSel.value);
+    const idx = currentChordNotes.findIndex(n => {
+        let match = (n.b === x);
+        if (dim === 3) match &= (n.c === y);
+        else if (dim === 4) match &= (n.d === y);
+        else if (dim === 5) match &= (n.e === y);
+        return match;
+    });
+
+    if (idx >= 0) {
+        currentChordNotes.splice(idx, 1);
+    } else {
+        const newNote = { a: 0, b: x, c: 0, d: 0, e: 0 };
+        if (dim === 3) newNote.c = y;
+        else if (dim === 4) newNote.d = y;
+        else if (dim === 5) newNote.e = y;
+        currentChordNotes.push(newNote);
+
+        // Audition
+        playPreviewNote(vm, newNote);
+    }
+
+    chordSelectedCell = {x, y};
+    renderChordEditor(vm);
+  }
+
   function renderChordEditor(vm) {
     const dim = parseInt(yAxisSel.value);
 
     // Generic Lattice Renderer
     renderGenericLattice(editorGrid, currentChordNotes, dim, chordSelectedCell, (x, y) => {
-        // Toggle Logic (JS side only for Chord Editor)
-        // Find existing note ignoring octave
-        // Coordinates: b=x, [c,d,e]=y
-        const idx = currentChordNotes.findIndex(n => {
-            let match = (n.b === x);
-            if (dim === 3) match &= (n.c === y);
-            else if (dim === 4) match &= (n.d === y);
-            else if (dim === 5) match &= (n.e === y);
-            return match;
-        });
-
-        if (idx >= 0) {
-            currentChordNotes.splice(idx, 1);
-        } else {
-            const newNote = { a: 0, b: x, c: 0, d: 0, e: 0 };
-            if (dim === 3) newNote.c = y;
-            else if (dim === 4) newNote.d = y;
-            else if (dim === 5) newNote.e = y;
-            currentChordNotes.push(newNote);
-
-            // Audition
-            playPreviewNote(vm, newNote);
-        }
-
-        chordSelectedCell = {x, y};
-        renderChordEditor(vm);
+        toggleNote(x, y);
     });
   }
 
@@ -228,6 +232,12 @@ export function setupChordView(vm) {
       const viewChord = document.getElementById("view-chord");
       if (!viewChord.classList.contains("active")) return;
       if (!chordSelectedCell) return;
+
+      if (e.key === " ") {
+          toggleNote(chordSelectedCell.x, chordSelectedCell.y);
+          e.preventDefault();
+          return;
+      }
 
       // Shift Octave logic for selected cell
       if (e.key === "+" || e.key === "=" || e.key === "-") {
