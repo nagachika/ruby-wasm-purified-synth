@@ -274,25 +274,75 @@ class ModularEditor {
       .style("padding", "5px")
       .style("display", "none")
       .style("z-index", "1000");
+  }
 
-    const items = Object.keys(NODE_TYPES).filter(t => t !== "Destination");
+  showContextMenu(pageX, pageY, nodeX, nodeY, item = null) {
+    this.contextMenu.html("");
 
-    items.forEach(type => {
+    if (!item) {
+      const items = Object.keys(NODE_TYPES).filter(t => t !== "Destination");
+      items.forEach(type => {
+        this.contextMenu.append("div")
+          .text("Add " + type)
+          .style("padding", "5px 10px")
+          .style("cursor", "pointer")
+          .style("color", "#eee")
+          .style("font-size", "14px")
+          .on("mouseenter", function() { d3.select(this).style("background", "#444"); })
+          .on("mouseleave", function() { d3.select(this).style("background", "none"); })
+          .on("click", () => {
+             this.addNode(type, nodeX, nodeY);
+             this.hideContextMenu();
+          });
+      });
+    } else if (item.type === 'node') {
+      const node = this.nodes.find(n => n.id === item.id);
+      if (node && node.type !== 'Destination') {
+        this.contextMenu.append("div")
+          .text("Delete Node")
+          .style("padding", "5px 10px")
+          .style("cursor", "pointer")
+          .style("color", "#ff6b6b")
+          .style("font-size", "14px")
+          .on("mouseenter", function() { d3.select(this).style("background", "#444"); })
+          .on("mouseleave", function() { d3.select(this).style("background", "none"); })
+          .on("click", (e) => {
+             e.stopPropagation();
+             this.select(item);
+             this.deleteSelected();
+             this.hideContextMenu();
+          });
+      }
       this.contextMenu.append("div")
-        .text("Add " + type)
+        .text("Edit Parameters")
         .style("padding", "5px 10px")
         .style("cursor", "pointer")
         .style("color", "#eee")
+        .style("font-size", "14px")
         .on("mouseenter", function() { d3.select(this).style("background", "#444"); })
         .on("mouseleave", function() { d3.select(this).style("background", "none"); })
-        .on("click", () => {
-           this.addNode(type, this.contextMenu.nodeX, this.contextMenu.nodeY);
+        .on("click", (e) => {
+           e.stopPropagation();
+           this.showParamEditor(node);
            this.hideContextMenu();
         });
-    });
-  }
+    } else if (item.type === 'edge') {
+      this.contextMenu.append("div")
+        .text("Delete Connection")
+        .style("padding", "5px 10px")
+        .style("cursor", "pointer")
+        .style("color", "#ff6b6b")
+        .style("font-size", "14px")
+        .on("mouseenter", function() { d3.select(this).style("background", "#444"); })
+        .on("mouseleave", function() { d3.select(this).style("background", "none"); })
+        .on("click", (e) => {
+           e.stopPropagation();
+           this.select(item);
+           this.deleteSelected();
+           this.hideContextMenu();
+        });
+    }
 
-  showContextMenu(pageX, pageY, nodeX, nodeY) {
     this.contextMenu
       .style("left", pageX + "px")
       .style("top", pageY + "px")
@@ -540,6 +590,12 @@ class ModularEditor {
       .on("dblclick", function(event, d) {
          event.stopPropagation();
          editor.showParamEditor(d);
+      })
+      .on("contextmenu", function(event, d) {
+        event.preventDefault();
+        event.stopPropagation();
+        const [x, y] = d3.pointer(event, editor.svg.node());
+        editor.showContextMenu(event.pageX, event.pageY, x, y, { type: 'node', id: d.id });
       });
 
     nodeEnter.append("text")
@@ -690,6 +746,12 @@ class ModularEditor {
       .on("click", function(event, d) {
         event.stopPropagation();
         editor.select({ type: 'edge', id: d.id });
+      })
+      .on("contextmenu", function(event, d) {
+        event.preventDefault();
+        event.stopPropagation();
+        const [x, y] = d3.pointer(event, editor.svg.node());
+        editor.showContextMenu(event.pageX, event.pageY, x, y, { type: 'edge', id: d.id });
       })
       .merge(edges)
       .attr("stroke", d => (this.selected && this.selected.type === 'edge' && this.selected.id === d.id) ? "#f06595" : "#888")
