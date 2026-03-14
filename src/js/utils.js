@@ -1,5 +1,15 @@
 export const CELL_WIDTH = 10; // px
 
+export const dimensionColors = {
+  1: "#ffffff",
+  2: "#ff7f50", // coral
+  3: "#20b2aa", // lightseagreen
+  4: "#9370db", // mediumpurple
+  5: "#ff69b4", // hotpink
+  6: "#ffd700", // gold
+  7: "#cd5c5c"  // indianred
+};
+
 export function drawTetrisShape(ctx, notes, w, h, dimension) {
     ctx.fillStyle = "#222";
     ctx.fillRect(0, 0, w, h);
@@ -43,7 +53,14 @@ export function drawTetrisShape(ctx, notes, w, h, dimension) {
         const cx = offsetX + p.x * cellSize;
         const cy = offsetY + (maxY - p.y) * cellSize;
 
-        ctx.fillStyle = "#4dabf7";
+        // Color Logic: center=white, x-axis=2d, others=dimToUse
+        if (p.x === 0 && p.y === 0) {
+            ctx.fillStyle = "#ffffff";
+        } else if (p.y === 0) {
+            ctx.fillStyle = dimensionColors[2];
+        } else {
+            ctx.fillStyle = dimensionColors[dimToUse];
+        }
 
         if (p.x === 0 && p.y === 0) {
             ctx.beginPath();

@@ -1,4 +1,4 @@
-import { drawTetrisShape } from "./utils.js";
+import { drawTetrisShape, dimensionColors } from "./utils.js";
 import { getChords, saveChords, updateChord, deleteChord } from "./chord_manager.js";
 import { getPresets } from "./presets.js";
 
@@ -312,7 +312,15 @@ function renderGenericLattice(container, notes, dim, selectedCell, onToggle) {
         });
 
         if (note) {
-          cell.style.background = "#4dabf7";
+          // Color Logic: center=white, x-axis=2d, others=current dim
+          if (x === 0 && y === 0) {
+            cell.style.background = "#fff";
+          } else if (y === 0) {
+            cell.style.background = dimensionColors[2];
+          } else {
+            cell.style.background = dimensionColors[dim];
+          }
+
           if (note.a > 0) cell.textContent = `↑${note.a}`;
           else if (note.a < 0) cell.textContent = `↓${Math.abs(note.a)}`;
         }
