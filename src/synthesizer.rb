@@ -13,9 +13,10 @@ class Synthesizer
 
   attr_reader :master_gain, :analyser_node
 
-  def initialize(ctx, enable_effects: true)
+  def initialize(ctx, enable_effects: true, enable_analyser: true)
     @ctx = ctx
     @enable_effects = enable_effects
+    @enable_analyser = enable_analyser
 
     # Defaults
     @delay_time_val = 0.3
@@ -71,23 +72,25 @@ class Synthesizer
       @reverb_wet_gain.connect(@reverb_output)
       @reverb_dry_gain.connect(@reverb_output)
 
-      # 3. Final Analysis & Output
-      @analyser_node = AnalyserNode.new(@ctx)
-      @analyser_node.fft_size = 2048
-
-      # Reverb Output -> Analyser
-      @reverb_output.connect(@analyser_node)
-
+      # 3. Final Output (Before Analyser)
+      @final_node = @reverb_output
       update_reverb_buffer
     else
       # Minimal graph
+      @final_node = @master_gain
+    end
+
+    # 4. Optional Analyser
+    if @enable_analyser
       @analyser_node = AnalyserNode.new(@ctx)
-      @master_gain.connect(@analyser_node)
+      @analyser_node.fft_size = 2048
+      @final_node.connect(@analyser_node)
+      @final_node = @analyser_node
     end
   end
 
   def connect(destination)
-    @analyser_node.connect(destination)
+    @final_node.connect(destination)
   end
 
   def connect_to_destination_with_compressor
@@ -99,7 +102,7 @@ class Synthesizer
     comp.attack.value = 0.003
     comp.release.value = 0.25
 
-    @analyser_node.connect(comp)
+    @final_node.connect(comp)
     comp.connect(@ctx[:destination])
 
     # Return comp so we can keep track if needed, though mostly fire-and-forget for simple usage
@@ -128,7 +131,7 @@ class Synthesizer
   end
 
   def close
-    @analyser_node.disconnect
+    @final_node&.disconnect
     @active_voices.values.each(&:stop_immediately)
     @active_voices.clear
   end

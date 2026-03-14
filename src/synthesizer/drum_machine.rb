@@ -14,8 +14,7 @@ class DrumMachine
     @compressor.ratio.value = 4.0
     @master_gain.connect(@compressor)
 
-    @analyser_node = AnalyserNode.new(@ctx)
-    @compressor.connect(@analyser_node)
+    @final_node = @compressor
 
     @instruments = {}
     setup_instruments
@@ -30,7 +29,7 @@ class DrumMachine
   end
 
   def create_kick
-    s = Synthesizer.new(@ctx, enable_effects: false)
+    s = Synthesizer.new(@ctx, enable_effects: false, enable_analyser: false)
     s.custom_patch = {
       nodes: [
         { id: "vco", type: "Oscillator", freq_track: true, params: { type: "triangle" } },
@@ -51,7 +50,7 @@ class DrumMachine
   end
 
   def create_snare
-    s = Synthesizer.new(@ctx, enable_effects: false)
+    s = Synthesizer.new(@ctx, enable_effects: false, enable_analyser: false)
     s.custom_patch = {
       nodes: [
         { id: "vco", type: "Noise", params: { type: "white" } },
@@ -72,7 +71,7 @@ class DrumMachine
   end
 
   def create_hihat
-    s = Synthesizer.new(@ctx, enable_effects: false)
+    s = Synthesizer.new(@ctx, enable_effects: false, enable_analyser: false)
     s.custom_patch = {
       nodes: [
         { id: "vco", type: "Noise", params: { type: "white" } },
@@ -93,7 +92,7 @@ class DrumMachine
   end
 
   def create_openhat
-    s = Synthesizer.new(@ctx, enable_effects: false)
+    s = Synthesizer.new(@ctx, enable_effects: false, enable_analyser: false)
     s.custom_patch = {
       nodes: [
         { id: "vco", type: "Noise", params: { type: "white" } },
@@ -114,7 +113,7 @@ class DrumMachine
   end
 
   def connect(destination)
-    @analyser_node.connect(destination)
+    @final_node.connect(destination)
   end
 
   def volume=(val)
@@ -141,6 +140,6 @@ class DrumMachine
   def close
     @instruments.values.each(&:close)
     @master_gain.disconnect
-    @analyser_node.disconnect
+    @final_node&.disconnect
   end
 end

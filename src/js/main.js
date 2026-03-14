@@ -184,7 +184,7 @@ const main = async () => {
     App.eval("$synth = $sequencer.current_track.synth");
 
     // Pattern Preview Sequencer
-    App.eval("$patternSequencer = Sequencer.new(JS.eval('return window.App.audioCtx;'), name: '$patternSequencer')");
+    App.eval("$patternSequencer = Sequencer.new(JS.eval('return window.App.audioCtx;'), name: '$patternSequencer', enable_analyser: false)");
     App.eval("$patternSequencer.add_rhythm_track");
     App.eval("$patternSequencer.set_patterns_reference($sequencer.patterns)");
     App.eval("$patternSequencer.set_total_bars(1)"); // Preview is 1 bar (32 steps)

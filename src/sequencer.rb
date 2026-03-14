@@ -96,9 +96,10 @@ class Sequencer
   attr_reader :is_playing, :current_step, :tracks, :current_track_index, :total_steps
   attr_reader :patterns, :name
 
-  def initialize(ctx, name: "$sequencer")
+  def initialize(ctx, name: "$sequencer", enable_analyser: true)
     @ctx = ctx
     @name = name # The Ruby global variable name or identifier
+    @enable_analyser = enable_analyser
     @bpm = 120
     @root_freq = 261.63 # C4
     @swing_amount = 0.0
@@ -233,8 +234,8 @@ class Sequencer
     update_block_notes_buffer(track_index, start_step, buffer)
   end
 
-  def add_track
-    synth = Synthesizer.new(@ctx)
+  def add_track(enable_analyser: @enable_analyser)
+    synth = Synthesizer.new(@ctx, enable_analyser: enable_analyser)
     synth.connect(@master_gain)
 
     track = Track.new(synth, :melodic)
@@ -272,7 +273,7 @@ class Sequencer
       $synth = current_track.synth if @name == "$sequencer"
       # If rhythm track, $synth is DrumMachine, which might not match Synthesizer interface perfectly for UI
       # We will handle this in UI
-      JS.global[:synthAnalyser] = current_track.synth.analyser_node.native_node if @name == "$sequencer"
+      JS.global[:synthAnalyser] = current_track.synth.analyser_node&.native_node if @name == "$sequencer"
     end
   end
 
