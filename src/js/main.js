@@ -55,9 +55,25 @@ function setupTabs() {  const tabSynth = document.getElementById("tab-synth");
     if (view === "synth") {
       tabSynth.classList.add("active");
       viewSynth.classList.add("active");
+
+      // Switch to Preview Synth context
+      App.eval("$synth = $previewSynth");
+      App.eval("$effect_controller = $previewEffects");
+      window.synthAnalyser = App.eval("$previewAnalyser.native_node").toJS();
+
+      // Refresh UI values from new context if needed?
+      // (Optimally we should read back values and update sliders)
+
     } else if (view === "seq") {
       tabSeq.classList.add("active");
       viewSeq.classList.add("active");
+
+      // Switch to Sequencer context
+      App.eval("$synth = $sequencer.current_track.synth");
+      App.eval("$effect_controller = $sequencer.effects_chain");
+      // monitor_analyser is set in select_track, but ensure global is updated
+      window.synthAnalyser = App.eval("$sequencer.monitor_analyser.native_node").toJS();
+
       window.dispatchEvent(new Event("trackChanged"));
     } else if (view === "chord") {
       tabChord.classList.add("active");
@@ -108,6 +124,7 @@ const main = async () => {
       "src/synthesizer/voice.rb",
       "src/synthesizer.rb",
       "src/synthesizer/drum_machine.rb",
+      "src/effects_chain.rb",
       "src/sequencer.rb",
       "src/js_bridge.rb"
     ];
@@ -176,22 +193,40 @@ const main = async () => {
     };
 
     loadScript('/src/synthesizer.rb');
+    loadScript('/src/effects_chain.rb');
     loadScript('/src/sequencer.rb');
     loadScript('/src/js_bridge.rb');
 
     // Init Sequencer & Synth
     App.eval("$sequencer = Sequencer.new(JS.eval('return window.App.audioCtx;'), name: '$sequencer')");
     App.eval("$synth = $sequencer.current_track.synth");
+    App.eval("$effect_controller = $sequencer.effects_chain");
 
     // Pattern Preview Sequencer
-    App.eval("$patternSequencer = Sequencer.new(JS.eval('return window.App.audioCtx;'), name: '$patternSequencer', enable_analyser: false)");
+    App.eval("$patternSequencer = Sequencer.new(JS.eval('return window.App.audioCtx;'), name: '$patternSequencer')");
     App.eval("$patternSequencer.add_rhythm_track");
     App.eval("$patternSequencer.set_patterns_reference($sequencer.patterns)");
     App.eval("$patternSequencer.set_total_bars(1)"); // Preview is 1 bar (32 steps)
 
     // Create a standalone synth for Chord Preview
+    // Setup: Synth -> Effects -> Analyser -> Compressor -> Destination
     App.eval("$previewSynth = Synthesizer.new(JS.eval('return window.App.audioCtx;'))");
-    App.eval("$previewSynth.connect_to_destination_with_compressor");
+    App.eval("$previewEffects = EffectsChain.new(JS.eval('return window.App.audioCtx;'))");
+    App.eval("$previewAnalyser = AnalyserNode.new(JS.eval('return window.App.audioCtx;'))");
+    App.eval("$previewAnalyser.fft_size = 2048");
+
+    // Connect Chain
+    App.eval("$previewSynth.connect($previewEffects.input_node)");
+    App.eval("$previewEffects.connect($previewAnalyser)");
+    App.eval("$previewComp = DynamicsCompressorNode.new(JS.eval('return window.App.audioCtx;'))");
+    App.eval("$previewComp.threshold.value = -24.0");
+    App.eval("$previewAnalyser.connect($previewComp)");
+    App.eval("$previewComp.connect(JS.eval('return window.App.audioCtx;')[:destination])");
+
+    // Default to preview synth for UI initially
+    App.eval("$synth = $previewSynth");
+    App.eval("$effect_controller = $previewEffects");
+    window.synthAnalyser = App.eval("$previewAnalyser.native_node").toJS();
 
     console.log("Initialized");
 

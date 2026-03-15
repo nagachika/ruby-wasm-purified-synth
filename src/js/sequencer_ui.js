@@ -93,7 +93,7 @@ export function setupSequencer(App) {
     updatePlayBtnUI();
 
     const now = App.audioCtx.currentTime;
-    
+
     // Process main sequencer visual update
     if (window._currentSequencerStep !== undefined && window._currentSequencerStep !== lastProcessedStep) {
         // We check time to be more precise if needed, but for now step is enough
@@ -177,7 +177,7 @@ export function setupSequencer(App) {
             const controlDiv = document.createElement("div");
             controlDiv.style.display = "flex";
             controlDiv.style.flexDirection = "column";
-            controlDiv.style.width = "140px";
+            controlDiv.style.width = "180px";
             controlDiv.style.flexShrink = "0";
             controlDiv.style.borderRight = "1px solid #555";
             controlDiv.style.paddingRight = "10px";
@@ -217,6 +217,12 @@ export function setupSequencer(App) {
             soloBtn.style.border = "1px solid #555";
             soloBtn.style.cursor = "pointer";
 
+            const sendBtn = document.createElement("button");
+            sendBtn.style.padding = "4px";
+            sendBtn.style.border = "1px solid #555";
+            sendBtn.style.cursor = "pointer";
+            sendBtn.title = "Send to Effects";
+
             const arpBtn = document.createElement("button");
             arpBtn.style.padding = "4px";
             arpBtn.style.border = "1px solid #555";
@@ -240,6 +246,7 @@ export function setupSequencer(App) {
             btnRow.appendChild(removeBtn);
             btnRow.appendChild(muteBtn);
             btnRow.appendChild(soloBtn);
+            btnRow.appendChild(sendBtn);
             btnRow.appendChild(arpBtn);
             btnRow.appendChild(knobContainer);
 
@@ -280,7 +287,7 @@ export function setupSequencer(App) {
             }
 
             cached = {
-                row, controlDiv, grid, labelBtn, presetSel, muteBtn, soloBtn, arpBtn, knobIcon, knobContainer, playhead, trackType: null
+                row, controlDiv, grid, labelBtn, presetSel, muteBtn, soloBtn, sendBtn, arpBtn, knobIcon, knobContainer, playhead, trackType: null
             };
             trackRowsCache.set(t, cached);
         }
@@ -339,6 +346,7 @@ export function setupSequencer(App) {
         // Mute/Solo
         let isMuted = App.call("$sequencer", "get_track_mute", t).toString() === "true";
         let isSolo = App.call("$sequencer", "get_track_solo", t).toString() === "true";
+        let isSend = App.call("$sequencer", "get_track_send", t).toString() === "true";
 
         cached.muteBtn.innerHTML = `<span class="material-icons" style="font-size: 1.2rem;">${isMuted ? "volume_off" : "volume_up"}</span>`;
         cached.muteBtn.style.background = isMuted ? "#6c757d" : "#444";
@@ -352,6 +360,14 @@ export function setupSequencer(App) {
         cached.soloBtn.style.color = isSolo ? "black" : "white";
         cached.soloBtn.onclick = () => {
             App.call("$sequencer", "set_track_solo", t, !isSolo);
+            renderSequencer();
+        };
+
+        cached.sendBtn.innerHTML = `<span class="material-icons" style="font-size: 1.2rem;">${isSend ? "blur_on" : "blur_off"}</span>`;
+        cached.sendBtn.style.background = isSend ? "#be4bdb" : "#444";
+        cached.sendBtn.style.color = isSend ? "white" : "#ccc";
+        cached.sendBtn.onclick = () => {
+            App.call("$sequencer", "set_track_send", t, !isSend);
             renderSequencer();
         };
 

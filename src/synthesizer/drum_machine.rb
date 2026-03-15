@@ -29,7 +29,7 @@ class DrumMachine
   end
 
   def create_kick
-    s = Synthesizer.new(@ctx, enable_effects: false, enable_analyser: false)
+    s = Synthesizer.new(@ctx)
     s.custom_patch = {
       nodes: [
         { id: "vco", type: "Oscillator", freq_track: true, params: { type: "triangle" } },
@@ -50,7 +50,7 @@ class DrumMachine
   end
 
   def create_snare
-    s = Synthesizer.new(@ctx, enable_effects: false, enable_analyser: false)
+    s = Synthesizer.new(@ctx)
     s.custom_patch = {
       nodes: [
         { id: "vco", type: "Noise", params: { type: "white" } },
@@ -71,7 +71,7 @@ class DrumMachine
   end
 
   def create_hihat
-    s = Synthesizer.new(@ctx, enable_effects: false, enable_analyser: false)
+    s = Synthesizer.new(@ctx)
     s.custom_patch = {
       nodes: [
         { id: "vco", type: "Noise", params: { type: "white" } },
@@ -92,7 +92,7 @@ class DrumMachine
   end
 
   def create_openhat
-    s = Synthesizer.new(@ctx, enable_effects: false, enable_analyser: false)
+    s = Synthesizer.new(@ctx)
     s.custom_patch = {
       nodes: [
         { id: "vco", type: "Noise", params: { type: "white" } },

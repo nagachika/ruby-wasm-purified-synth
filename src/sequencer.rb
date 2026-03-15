@@ -1,6 +1,7 @@
 require "js"
 require "json"
 require_relative "synthesizer/drum_machine"
+require_relative "effects_chain"
 
 # Structure to hold lattice coordinates
 # a: 1st dim (2.0) - Octave
@@ -55,9 +56,9 @@ end
 
 class Track
   attr_accessor :blocks, :synth, :mute, :preset_name, :solo, :type
-  attr_reader :volume, :arpeggiator
+  attr_reader :volume, :arpeggiator, :send_gain
 
-  def initialize(synth, type = :melodic)
+  def initialize(ctx, synth, type = :melodic)
     @synth = synth
     @type = type # :melodic or :rhythmic
     @blocks = []
@@ -66,11 +67,22 @@ class Track
     @preset_name = ""
     @volume = 1.0
     @arpeggiator = Arpeggiator.new
+
+    # Send Gain for Effects
+    @send_gain = GainNode.new(ctx, gain: 0.0) # Default Send Off
   end
 
   def volume=(val)
     @volume = val.to_f
     @synth.volume = @volume
+  end
+
+  def send_enabled=(enabled)
+    @send_gain.gain.value = enabled ? 1.0 : 0.0
+  end
+
+  def send_enabled
+    @send_gain.gain.value > 0.5
   end
 
   def add_block(start_step, length, pattern_id = nil)
@@ -95,11 +107,11 @@ class Sequencer
 
   attr_reader :is_playing, :current_step, :tracks, :current_track_index, :total_steps
   attr_reader :patterns, :name
+  attr_reader :effects_chain, :monitor_analyser
 
-  def initialize(ctx, name: "$sequencer", enable_analyser: true)
+  def initialize(ctx, name: "$sequencer")
     @ctx = ctx
     @name = name # The Ruby global variable name or identifier
-    @enable_analyser = enable_analyser
     @bpm = 120
     @root_freq = 261.63 # C4
     @swing_amount = 0.0
@@ -108,6 +120,16 @@ class Sequencer
 
     # --- Master Bus ---
     @master_gain = GainNode.new(@ctx, gain: 1.0)
+
+    # --- Effects Bus (Send/Return) ---
+    @effects_chain = EffectsChain.new(@ctx)
+    @send_bus = GainNode.new(@ctx, gain: 1.0)
+
+    # Routing: Send Bus -> Effects Chain -> Master (Return)
+    @send_bus.connect(@effects_chain.input_node)
+    @effects_chain.connect(@master_gain)
+
+    # --- Compressor & Output ---
     @compressor = DynamicsCompressorNode.new(@ctx)
     @compressor.threshold.value = -24.0
     @compressor.knee.value = 30.0
@@ -117,6 +139,12 @@ class Sequencer
 
     @master_gain.connect(@compressor)
     @compressor.connect(@ctx[:destination])
+
+    # --- Monitor Analyser (For Visualization) ---
+    @monitor_analyser = AnalyserNode.new(@ctx)
+    @monitor_analyser.fft_size = 2048
+    # NOTE: Analyser is NOT in the audio path to destination,
+    # but we connect track outputs to it temporarily for visualization.
 
     @tracks = []
     @patterns = []
@@ -182,6 +210,15 @@ class Sequencer
     @tracks[index]&.volume || 1.0
   end
 
+  def set_track_send(index, enabled)
+    t = @tracks[index]
+    t.send_enabled = (enabled == true || enabled == "true") if t
+  end
+
+  def get_track_send(index)
+    @tracks[index]&.send_enabled || false
+  end
+
   def get_track_preset_name(index)
     @tracks[index]&.preset_name || ""
   end
@@ -234,11 +271,17 @@ class Sequencer
     update_block_notes_buffer(track_index, start_step, buffer)
   end
 
-  def add_track(enable_analyser: @enable_analyser)
-    synth = Synthesizer.new(@ctx, enable_analyser: enable_analyser)
+  def add_track
+    synth = Synthesizer.new(@ctx)
+    # Routing:
+    # 1. Synth -> Master (Dry)
     synth.connect(@master_gain)
 
-    track = Track.new(synth, :melodic)
+    track = Track.new(@ctx, synth, :melodic)
+    # 2. Synth -> SendGain -> SendBus (Wet Send)
+    synth.connect(track.send_gain)
+    track.send_gain.connect(@send_bus)
+
     @tracks << track
     select_track(@tracks.length - 1)
     track
@@ -248,7 +291,12 @@ class Sequencer
     drum_machine = DrumMachine.new(@ctx)
     drum_machine.connect(@master_gain)
 
-    track = Track.new(drum_machine, :rhythmic)
+    track = Track.new(@ctx, drum_machine, :rhythmic)
+
+    # Send routing for DrumMachine too
+    drum_machine.connect(track.send_gain)
+    track.send_gain.connect(@send_bus)
+
     track.preset_name = "Drum Kit"
     @tracks << track
     select_track(@tracks.length - 1)
@@ -261,19 +309,39 @@ class Sequencer
 
     track = @tracks.delete_at(index)
     track.synth.close
+    track.send_gain.disconnect # Disconnect from SendBus
 
     if @current_track_index >= @tracks.length
       @current_track_index = @tracks.length - 1
     end
+    # Reselect to update analyser connection
+    select_track(@current_track_index)
   end
 
   def select_track(index)
+    # Disconnect previous analyser source if any
+    # Since we can't easily disconnect specific node from ruby wrapper without tracking,
+    # We rely on track switching logic.
+    # Actually, we should disconnect the *previous* track's synth from the monitor analyser.
+    if @current_track_index && @tracks[@current_track_index]
+      prev_synth = @tracks[@current_track_index].synth
+      prev_synth.disconnect(@monitor_analyser)
+    end
+
     if index >= 0 && index < @tracks.length
       @current_track_index = index
-      $synth = current_track.synth if @name == "$sequencer"
-      # If rhythm track, $synth is DrumMachine, which might not match Synthesizer interface perfectly for UI
-      # We will handle this in UI
-      JS.global[:synthAnalyser] = current_track.synth.analyser_node&.native_node if @name == "$sequencer"
+      track = @tracks[index]
+
+      # Connect new track to monitor analyser for visualization
+      track.synth.connect(@monitor_analyser)
+
+      if @name == "$sequencer"
+        $synth = track.synth
+        $effect_controller = @effects_chain
+
+        # UI expects synthAnalyser global for Visualizer
+        JS.global[:synthAnalyser] = @monitor_analyser.native_node
+      end
     end
   end
 

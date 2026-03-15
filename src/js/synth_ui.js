@@ -705,7 +705,8 @@ export function setupUI(App) {
         let val = el.value;
         if (id.includes('time') || id.includes('seconds')) val += ' s';
         if (display) display.textContent = val;
-        App.call("$synth", `${id}=`, parseFloat(el.value));
+        // Use $effect_controller for effects, which might be $previewEffects or $sequencer.effects_chain
+        App.call("$effect_controller", `${id}=`, parseFloat(el.value));
       });
     }
   });
