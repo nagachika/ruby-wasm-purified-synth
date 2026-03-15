@@ -36,30 +36,19 @@ class ADSREnvelope
     return unless @target_param
 
     t = time.to_f
-    min_val = 0.001
+
+    # Use setTargetAtTime for smooth release from any current value
+    # This avoids "clicks" if the note is released before Attack/Decay phase finishes.
+    # Target = 0, Start = t, TimeConstant = release / 3
+    # Value reaches ~5% (e^-3) after 1.0 * release time.
 
     @target_param.cancel_scheduled_values(t)
 
-    # We need to capture the current value to ramp down smoothly from where we are
-    # However, standard AudioParam doesn't easily give "value at scheduled time X".
-    # A common workaround is to set the value at time T to the calculated curve value,
-    # or just let the ramp start from the last scheduled point if strictly sequenced.
-    # For interactive playing, explicit setValueAtTime is safer to avoid jumps.
+    # Ensure release is not zero to avoid division by zero or instant change artifacts
+    safe_release = @release.to_f
+    safe_release = 0.01 if safe_release < 0.01
 
-    # Simple approach: Ramp from current sustain level (assuming we reached it)
-    # If key is released during attack/decay, this might jump.
-    # Proper solution requires 'setTargetAtTime' or tracking, but let's stick to simple ADSR for now.
-
-    # Note: If we use setTargetAtTime, it's an exponential approach to target.
-    # Here we use exponentialRamp which requires an event to start from.
-    # To fix the "jump" artifact when releasing early, we would ideally read the current value,
-    # but that requires 'ctx.currentTime' synchronous read which might be slight off scheduled time.
-
-    # We will assume we are at Sustain level or rely on the engine to handle the curve interpolation
-    # if we don't insert a setValueAtTime. But Web Audio REQUIRES a start point for ramps.
-
-    # Safe approximation:
-    @target_param.set_value_at_time(@target_param.value, t)
-    @target_param.exponential_ramp_to_value_at_time(min_val, t + @release)
+    time_constant = safe_release / 3.0
+    @target_param.set_target_at_time(0.0, t, time_constant)
   end
 end

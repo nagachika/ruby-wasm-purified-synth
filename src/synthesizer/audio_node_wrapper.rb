@@ -35,6 +35,10 @@ class AudioParamWrapper
   def cancel_scheduled_values(time)
     @native_node.call(:cancelScheduledValues, time.to_f)
   end
+
+  def set_target_at_time(target, time, time_constant)
+    @native_node.call(:setTargetAtTime, target.to_f, time.to_f, time_constant.to_f)
+  end
 end
 
 # Base wrapper for Web Audio API AudioNodes

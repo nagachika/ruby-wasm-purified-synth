@@ -108,8 +108,14 @@ class Voice
     @envelopes.values.each { |e| e.release_at(t) }
 
     # Find the longest release time to schedule node stopping
-    max_release = @envelopes.values.map(&:release).max || 0
-    stop_time = t + max_release + 0.1
+    max_release = @envelopes.values.map(&:release).max || 0.1
+
+    # Wait for exponential decay to settle (approx 5 time constants)
+    # With setTargetAtTime(target, start, timeConstant=release/3),
+    # at t = start + release, value is ~5%.
+    # at t = start + release*2, value is ~0.25%.
+    # Adding extra buffer to ensure silence.
+    stop_time = t + max_release * 2.0 + 1.0
 
     @nodes.values.each { |n| n.stop(stop_time) if n.respond_to?(:stop) }
   end
