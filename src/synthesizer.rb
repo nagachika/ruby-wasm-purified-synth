@@ -36,22 +36,6 @@ class Synthesizer
     end
   end
 
-  def connect_to_destination_with_compressor
-    # Create a dedicated compressor for standalone usage
-    comp = DynamicsCompressorNode.new(@ctx)
-    comp.threshold.value = -24.0
-    comp.knee.value = 30.0
-    comp.ratio.value = 12.0
-    comp.attack.value = 0.003
-    comp.release.value = 0.25
-
-    @final_node.connect(comp)
-    comp.connect(@ctx[:destination])
-
-    # Return comp so we can keep track if needed, though mostly fire-and-forget for simple usage
-    comp
-  end
-
   def default_patch
     {
       nodes: [
