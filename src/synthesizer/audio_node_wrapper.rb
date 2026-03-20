@@ -62,8 +62,18 @@ class AudioNodeWrapper
     self # Allow chaining
   end
 
-  def disconnect
-    @native_node.disconnect
+  def disconnect(destination = nil)
+    if destination
+      if destination.is_a?(AudioNodeWrapper) || destination.is_a?(AudioParamWrapper)
+        @native_node.disconnect(destination.native_node)
+      elsif destination.is_a?(JS::Object)
+        @native_node.disconnect(destination)
+      else
+        raise ArgumentError, "Cannot disconnect from #{destination.class}"
+      end
+    else
+      @native_node.disconnect
+    end
   end
 
   # Helper to access parameters wrapped in AudioParamWrapper
