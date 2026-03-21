@@ -107,7 +107,7 @@ class Sequencer
 
   attr_reader :is_playing, :current_step, :tracks, :current_track_index, :total_steps
   attr_reader :patterns, :name
-  attr_reader :effects_chain, :monitor_analyser
+  attr_reader :effects_chain
 
   def initialize(ctx, name: "$sequencer")
     @ctx = ctx
@@ -139,12 +139,6 @@ class Sequencer
 
     @master_gain.connect(@compressor)
     @compressor.connect(@ctx[:destination])
-
-    # --- Monitor Analyser (For Visualization) ---
-    @monitor_analyser = AnalyserNode.new(@ctx)
-    @monitor_analyser.fft_size = 2048
-    # NOTE: Analyser is NOT in the audio path to destination,
-    # but we connect track outputs to it temporarily for visualization.
 
     @tracks = []
     @patterns = []
@@ -319,28 +313,13 @@ class Sequencer
   end
 
   def select_track(index)
-    # Disconnect previous analyser source if any
-    # Since we can't easily disconnect specific node from ruby wrapper without tracking,
-    # We rely on track switching logic.
-    # Actually, we should disconnect the *previous* track's synth from the monitor analyser.
-    if @current_track_index && @tracks[@current_track_index]
-      prev_synth = @tracks[@current_track_index].synth
-      prev_synth.disconnect(@monitor_analyser)
-    end
-
     if index >= 0 && index < @tracks.length
       @current_track_index = index
       track = @tracks[index]
 
-      # Connect new track to monitor analyser for visualization
-      track.synth.connect(@monitor_analyser)
-
       if @name == "$sequencer"
         $synth = track.synth
         $effect_controller = @effects_chain
-
-        # UI expects synthAnalyser global for Visualizer
-        JS.global[:synthAnalyser] = @monitor_analyser.native_node
       end
     end
   end

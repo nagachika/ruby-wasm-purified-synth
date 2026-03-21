@@ -92,8 +92,6 @@ function setupTabs() {  const tabSynth = document.getElementById("tab-synth");
       // Switch to Sequencer context
       App.eval("$synth = $sequencer.current_track.synth");
       App.eval("$effect_controller = $sequencer.effects_chain");
-      // monitor_analyser is set in select_track, but ensure global is updated
-      window.synthAnalyser = App.eval("$sequencer.monitor_analyser.native_node").toJS();
 
       updateUISliders();
       window.dispatchEvent(new Event("trackChanged"));
