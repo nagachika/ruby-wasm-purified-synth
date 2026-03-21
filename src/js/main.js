@@ -152,6 +152,9 @@ const main = async () => {
     // Expose for visualizer (Legacy support if needed, or update visualizer)
     window.audioCtx = App.audioCtx;
 
+    // Initialize Ruby global $ctx
+    App.eval("$ctx = JS.eval('return window.App.audioCtx;')");
+
     overlay.style.display = "none";
 
     console.log("Loading Ruby scripts...");
@@ -237,39 +240,39 @@ const main = async () => {
     loadScript('/src/js_bridge.rb');
 
     // Init Sequencer & Synth
-    App.eval("$sequencer = Sequencer.new(JS.eval('return window.App.audioCtx;'), name: '$sequencer')");
+    App.eval("$sequencer = Sequencer.new($ctx, name: '$sequencer')");
     App.eval("$synth = $sequencer.current_track.synth");
     App.eval("$effect_controller = $sequencer.effects_chain");
 
     // Pattern Preview Sequencer
-    App.eval("$patternSequencer = Sequencer.new(JS.eval('return window.App.audioCtx;'), name: '$patternSequencer')");
+    App.eval("$patternSequencer = Sequencer.new($ctx, name: '$patternSequencer')");
     App.eval("$patternSequencer.add_rhythm_track");
     App.eval("$patternSequencer.set_patterns_reference($sequencer.patterns)");
     App.eval("$patternSequencer.set_total_bars(1)"); // Preview is 1 bar (32 steps)
 
     // Create a standalone synth for Chord Preview
     // Setup: Synth -> Effects -> Analyser -> Compressor -> Destination
-    App.eval("$previewSynth = Synthesizer.new(JS.eval('return window.App.audioCtx;'))");
-    App.eval("$previewEffects = EffectsChain.new(JS.eval('return window.App.audioCtx;'))");
-    App.eval("$previewAnalyser = AnalyserNode.new(JS.eval('return window.App.audioCtx;'))");
+    App.eval("$previewSynth = Synthesizer.new($ctx)");
+    App.eval("$previewEffects = EffectsChain.new($ctx)");
+    App.eval("$previewAnalyser = AnalyserNode.new($ctx)");
     App.eval("$previewAnalyser.fft_size = 2048");
 
     // Connect Chain
     App.eval("$previewSynth.connect($previewEffects.input_node)");
     App.eval("$previewEffects.connect($previewAnalyser)");
-    App.eval("$previewComp = DynamicsCompressorNode.new(JS.eval('return window.App.audioCtx;'))");
+    App.eval("$previewComp = DynamicsCompressorNode.new($ctx)");
     App.eval("$previewComp.threshold.value = -24.0");
     App.eval("$previewAnalyser.connect($previewComp)");
-    App.eval("$previewComp.connect(JS.eval('return window.App.audioCtx;')[:destination])");
+    App.eval("$previewComp.connect($ctx[:destination])");
 
     // --- Chord Synth Setup ---
-    App.eval("$chordSynth = Synthesizer.new(JS.eval('return window.App.audioCtx;'))");
-    App.eval("$chordEffects = EffectsChain.new(JS.eval('return window.App.audioCtx;'))");
-    App.eval("$chordComp = DynamicsCompressorNode.new(JS.eval('return window.App.audioCtx;'))");
+    App.eval("$chordSynth = Synthesizer.new($ctx)");
+    App.eval("$chordEffects = EffectsChain.new($ctx)");
+    App.eval("$chordComp = DynamicsCompressorNode.new($ctx)");
     App.eval("$chordComp.threshold.value = -24.0");
     App.eval("$chordSynth.connect($chordEffects.input_node)");
     App.eval("$chordEffects.connect($chordComp)");
-    App.eval("$chordComp.connect(JS.eval('return window.App.audioCtx;')[:destination])");
+    App.eval("$chordComp.connect($ctx[:destination])");
 
     // Default to preview synth for UI initially
     App.eval("$synth = $previewSynth");
