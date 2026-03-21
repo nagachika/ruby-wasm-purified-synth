@@ -318,7 +318,6 @@ class Sequencer
       track = @tracks[index]
 
       if @name == "$sequencer"
-        $synth = track.synth
         $effect_controller = @effects_chain
       end
     end

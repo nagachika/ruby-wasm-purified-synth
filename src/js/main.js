@@ -90,7 +90,6 @@ function setupTabs() {  const tabSynth = document.getElementById("tab-synth");
       viewSeq.classList.add("active");
 
       // Switch to Sequencer context
-      App.eval("$synth = $sequencer.current_track.synth");
       App.eval("$effect_controller = $sequencer.effects_chain");
 
       updateUISliders();
