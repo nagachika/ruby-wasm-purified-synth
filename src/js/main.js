@@ -48,6 +48,22 @@ function setupTabs() {  const tabSynth = document.getElementById("tab-synth");
   const viewChord = document.getElementById("view-chord");
   const viewPattern = document.getElementById("view-pattern");
 
+  function updateUISliders() {
+    // Read values from current $effect_controller
+    const params = ["delay_time", "delay_feedback", "delay_mix", "reverb_seconds", "reverb_mix"];
+    params.forEach(param => {
+      const val = App.eval(`$effect_controller.${param}`).toJS();
+      const el = document.getElementById(param);
+      const display = document.getElementById(`val_${param}`);
+      if (el) {
+        el.value = val;
+        let displayVal = val;
+        if (param.includes('time') || param.includes('seconds')) displayVal += ' s';
+        if (display) display.textContent = displayVal;
+      }
+    });
+  }
+
   function switchTab(view) {
     [tabSynth, tabSeq, tabChord, tabPattern].forEach(t => t && t.classList.remove("active"));
     [viewSynth, viewSeq, viewChord, viewPattern].forEach(v => v && v.classList.remove("active"));
@@ -61,8 +77,13 @@ function setupTabs() {  const tabSynth = document.getElementById("tab-synth");
       App.eval("$effect_controller = $previewEffects");
       window.synthAnalyser = App.eval("$previewAnalyser.native_node").toJS();
 
-      // Refresh UI values from new context if needed?
-      // (Optimally we should read back values and update sliders)
+      updateUISliders();
+
+      // Refresh Modular Editor Patch
+      const patchJson = App.eval("$synth.export_patch").toJS();
+      if (window.modularEditor && patchJson) {
+         window.modularEditor.loadPatch(JSON.parse(patchJson));
+      }
 
     } else if (view === "seq") {
       tabSeq.classList.add("active");
@@ -74,10 +95,28 @@ function setupTabs() {  const tabSynth = document.getElementById("tab-synth");
       // monitor_analyser is set in select_track, but ensure global is updated
       window.synthAnalyser = App.eval("$sequencer.monitor_analyser.native_node").toJS();
 
+      updateUISliders();
       window.dispatchEvent(new Event("trackChanged"));
+
     } else if (view === "chord") {
       tabChord.classList.add("active");
       viewChord.classList.add("active");
+
+      // Switch to Chord Synth context
+      App.eval("$synth = $chordSynth");
+      App.eval("$effect_controller = $chordEffects");
+      // Use preview analyser for chord view visualization too? Or maybe none?
+      // For now, let's just stick with preview analyser if we want visualization,
+      // but chords go to a different destination.
+
+      updateUISliders();
+
+      // Refresh Modular Editor Patch
+      const patchJson = App.eval("$synth.export_patch").toJS();
+      if (window.modularEditor && patchJson) {
+         window.modularEditor.loadPatch(JSON.parse(patchJson));
+      }
+
     } else if (view === "pattern") {
       tabPattern.classList.add("active");
       viewPattern.classList.add("active");
@@ -222,6 +261,15 @@ const main = async () => {
     App.eval("$previewComp.threshold.value = -24.0");
     App.eval("$previewAnalyser.connect($previewComp)");
     App.eval("$previewComp.connect(JS.eval('return window.App.audioCtx;')[:destination])");
+
+    // --- Chord Synth Setup ---
+    App.eval("$chordSynth = Synthesizer.new(JS.eval('return window.App.audioCtx;'))");
+    App.eval("$chordEffects = EffectsChain.new(JS.eval('return window.App.audioCtx;'))");
+    App.eval("$chordComp = DynamicsCompressorNode.new(JS.eval('return window.App.audioCtx;'))");
+    App.eval("$chordComp.threshold.value = -24.0");
+    App.eval("$chordSynth.connect($chordEffects.input_node)");
+    App.eval("$chordEffects.connect($chordComp)");
+    App.eval("$chordComp.connect(JS.eval('return window.App.audioCtx;')[:destination])");
 
     // Default to preview synth for UI initially
     App.eval("$synth = $previewSynth");

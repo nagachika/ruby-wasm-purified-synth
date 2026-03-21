@@ -8,6 +8,7 @@ def js_bridge_dispatch(target_name, method_name, json_args)
            when '$patternSequencer' then $patternSequencer
            when '$synth'            then $synth
            when '$previewSynth'     then $previewSynth
+           when '$chordSynth'       then $chordSynth
            when '$effect_controller' then $effect_controller
            else
              puts "[Bridge Error] Unknown target: #{target_name}"

@@ -10,11 +10,11 @@ class EffectsChain
     @ctx = ctx
 
     # Defaults
-    @delay_time_val = 0.3
-    @delay_feedback_val = 0.4
-    @delay_mix_val = 0.3
-    @reverb_seconds_val = 2.0
-    @reverb_mix_val = 0.3
+    @delay_time = 0.3
+    @delay_feedback = 0.4
+    @delay_mix = 0.3
+    @reverb_seconds = 2.0
+    @reverb_mix = 0.3
 
     build_graph
   end
@@ -24,16 +24,16 @@ class EffectsChain
     @output_node = GainNode.new(@ctx)
 
     # --- Delay Effect ---
-    @delay_node = DelayNode.new(@ctx, delay_time: @delay_time_val)
-    @delay_feedback_gain = GainNode.new(@ctx, gain: @delay_feedback_val)
-    @delay_wet_gain = GainNode.new(@ctx, gain: @delay_mix_val)
-    @delay_dry_gain = GainNode.new(@ctx, gain: 1.0 - @delay_mix_val)
+    @delay_node = DelayNode.new(@ctx, delay_time: @delay_time)
+    @delay_feedback_gain = GainNode.new(@ctx, gain: @delay_feedback)
+    @delay_wet_gain = GainNode.new(@ctx, gain: @delay_mix)
+    @delay_dry_gain = GainNode.new(@ctx, gain: 1.0 - @delay_mix)
     @delay_output = GainNode.new(@ctx)
 
     # --- Reverb Effect ---
     @convolver = ConvolverNode.new(@ctx)
-    @reverb_wet_gain = GainNode.new(@ctx, gain: @reverb_mix_val)
-    @reverb_dry_gain = GainNode.new(@ctx, gain: 1.0 - @reverb_mix_val)
+    @reverb_wet_gain = GainNode.new(@ctx, gain: @reverb_mix)
+    @reverb_dry_gain = GainNode.new(@ctx, gain: 1.0 - @reverb_mix)
     @reverb_output = GainNode.new(@ctx)
 
     # --- Routing Chain ---
@@ -78,40 +78,40 @@ class EffectsChain
   # Parameter Setters
 
   def delay_time=(val)
-    @delay_time_val = val.to_f
-    @delay_node.delay_time.value = @delay_time_val if @delay_node
+    @delay_time = val.to_f
+    @delay_node.delay_time.value = @delay_time if @delay_node
   end
 
   def delay_feedback=(val)
-    @delay_feedback_val = val.to_f
-    @delay_feedback_gain.gain.value = @delay_feedback_val if @delay_feedback_gain
+    @delay_feedback = val.to_f
+    @delay_feedback_gain.gain.value = @delay_feedback if @delay_feedback_gain
   end
 
   def delay_mix=(val)
-    @delay_mix_val = val.to_f
-    @delay_wet_gain.gain.value = @delay_mix_val if @delay_wet_gain
-    @delay_dry_gain.gain.value = 1.0 - @delay_mix_val if @delay_dry_gain
+    @delay_mix = val.to_f
+    @delay_wet_gain.gain.value = @delay_mix if @delay_wet_gain
+    @delay_dry_gain.gain.value = 1.0 - @delay_mix if @delay_dry_gain
   end
 
   def reverb_seconds=(val)
-    @reverb_seconds_val = val.to_f
+    @reverb_seconds = val.to_f
     update_reverb_buffer
   end
 
   def reverb_mix=(val)
-    @reverb_mix_val = val.to_f
-    @reverb_wet_gain.gain.value = @reverb_mix_val if @reverb_wet_gain
-    @reverb_dry_gain.gain.value = 1.0 - @reverb_mix_val if @reverb_dry_gain
+    @reverb_mix = val.to_f
+    @reverb_wet_gain.gain.value = @reverb_mix if @reverb_wet_gain
+    @reverb_dry_gain.gain.value = 1.0 - @reverb_mix if @reverb_dry_gain
   end
 
   def update_reverb_buffer
     rate = @ctx[:sampleRate].to_f
-    length = (rate * @reverb_seconds_val).to_i
+    length = (rate * @reverb_seconds).to_i
 
     JS.eval(<<~JAVASCRIPT)
       const ctx = window.audioCtx;
       const length = #{length};
-      const seconds = #{@reverb_seconds_val};
+      const seconds = #{@reverb_seconds};
       const decay = 2.0;
       const buffer = ctx.createBuffer(2, length, ctx.sampleRate);
 
