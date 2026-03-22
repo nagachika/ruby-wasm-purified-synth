@@ -315,11 +315,6 @@ class Sequencer
   def select_track(index)
     if index >= 0 && index < @tracks.length
       @current_track_index = index
-      track = @tracks[index]
-
-      if @name == "$sequencer"
-        $effect_controller = @effects_chain
-      end
     end
   end
 
