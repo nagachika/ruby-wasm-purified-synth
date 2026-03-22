@@ -26,3 +26,9 @@ export function deleteChord(name) {
     delete chords[name];
     saveChords();
 }
+
+export function setChords(newChords) {
+    chords = newChords || {};
+    saveChords();
+    window.dispatchEvent(new Event("chordsUpdated"));
+}

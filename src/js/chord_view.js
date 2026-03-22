@@ -49,6 +49,9 @@ export function setupChordView(App) {
   window.addEventListener("presetsUpdated", updatePreviewPresets);
   updatePreviewPresets();
 
+  // Refresh chord list on external update
+  window.addEventListener("chordsUpdated", () => renderChordList(App));
+
   previewSel.onchange = (e) => {
     const name = e.target.value;
     if (name) {

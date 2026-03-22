@@ -707,4 +707,122 @@ class Sequencer
       @current_step = 0
     end
   end
+
+  # --- Project Serialization ---
+
+  def serialize_project
+    {
+      bpm: @bpm,
+      swing: @swing_amount,
+      root_freq: @root_freq,
+      total_steps: @total_steps,
+      patterns: @patterns.map(&:to_json_object),
+      tracks: @tracks.map { |t|
+        data = {
+          type: t.type,
+          volume: t.volume,
+          mute: t.mute,
+          solo: t.solo,
+          send: t.send_enabled,
+          preset_name: t.preset_name,
+          blocks: t.blocks.map(&:to_json_object),
+          arpeggiator: t.arpeggiator.to_json_object
+        }
+        if t.type == :melodic
+          data[:patch] = t.synth.export_patch
+        end
+        data
+      }
+    }.to_json
+  end
+
+  def deserialize_project(json)
+    data = JSON.parse(json, symbolize_names: true) rescue nil
+    return unless data
+
+    stop if @is_playing
+
+    # 1. Restore Global Settings
+    @bpm = data[:bpm].to_i
+    @swing_amount = data[:swing].to_f
+    @root_freq = data[:root_freq].to_f
+    @total_steps = data[:total_steps].to_i
+
+    # 2. Restore Patterns
+    @patterns.clear
+    (data[:patterns] || []).each do |p_data|
+      # Reconstruct events hash
+      events = {}
+      (p_data[:events] || {}).each do |inst, steps|
+        step_map = {}
+        if steps.is_a?(Hash)
+          steps.each { |k, v| step_map[k.to_s.to_i] = v.to_f }
+        elsif steps.is_a?(Array)
+          steps.each { |s| step_map[s.to_i] = 0.8 }
+        end
+        events[inst.to_s] = step_map
+      end
+
+      pattern = RhythmPattern.new(
+        p_data[:id],
+        p_data[:name],
+        p_data[:steps].to_i,
+        events
+      )
+      @patterns << pattern
+    end
+
+    # 3. Restore Tracks
+    # Clear existing tracks
+    while @tracks.length > 0
+      track = @tracks.shift
+      track.synth.close
+      track.send_gain.disconnect
+    end
+    @current_track_index = 0
+
+    (data[:tracks] || []).each do |t_data|
+      type = t_data[:type].to_sym
+      track = nil
+
+      if type == :rhythmic
+        track = add_rhythm_track
+      else
+        track = add_track
+        # Restore Synth Patch
+        if t_data[:patch]
+          track.synth.import_patch(t_data[:patch])
+        end
+      end
+
+      # Restore Track Settings
+      track.volume = t_data[:volume].to_f
+      track.mute = t_data[:mute]
+      track.solo = t_data[:solo]
+      track.send_enabled = t_data[:send]
+      track.preset_name = t_data[:preset_name]
+
+      # Restore Arpeggiator
+      if t_data[:arpeggiator]
+        arp = t_data[:arpeggiator]
+        track.arpeggiator.enabled = arp[:enabled]
+        track.arpeggiator.mode = arp[:mode].to_sym
+        track.arpeggiator.division = arp[:division].to_i
+        track.arpeggiator.octaves = arp[:octaves].to_i
+      end
+
+      # Restore Blocks
+      (t_data[:blocks] || []).each do |b_data|
+        block = track.add_block(b_data[:start].to_i, b_data[:length].to_i, b_data[:pattern_id])
+        block.chord_name = b_data[:chord_name]
+
+        # Restore Notes
+        (b_data[:notes] || []).each do |n|
+          block.notes << NoteCoord.new(
+            n[:a].to_f, n[:b].to_f, n[:c].to_f, n[:d].to_f, n[:e].to_f
+          )
+        end
+      end
+    end
+  end
 end

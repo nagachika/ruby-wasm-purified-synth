@@ -8,6 +8,11 @@ export function getPresets() {
 // Expose to window for other modules/Ruby if needed, though mostly other JS modules need it.
 window.getPresets = getPresets;
 
+export function setPresets(newPresets) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(newPresets));
+    window.dispatchEvent(new Event("presetsUpdated"));
+}
+
 function savePresets(presets) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(presets));
     window.dispatchEvent(new Event("presetsUpdated"));
@@ -55,6 +60,8 @@ export function setupPresets(App) {
     });
   }
   updateList();
+
+  window.addEventListener("presetsUpdated", updateList);
 
   saveBtn.onclick = () => {
     const name = nameInput.value.trim();

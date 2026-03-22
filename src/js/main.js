@@ -6,6 +6,7 @@ import { setupSequencer } from "./sequencer_ui.js";
 import { setupUI, setupKeyboard } from "./synth_ui.js";
 import { setupVisualizer } from "./visualizer.js";
 import { setupPatternEditor } from "./pattern_editor.js";
+import { setupProjectManager } from "./project_manager.js";
 
 const startBtn = document.getElementById("start-btn");
 const overlay = document.getElementById("start-overlay");
@@ -287,6 +288,7 @@ const main = async () => {
     setupPresets(App);
     setupChordView(App);
     setupPatternEditor(App);
+    setupProjectManager(App);
   };
 };
 
