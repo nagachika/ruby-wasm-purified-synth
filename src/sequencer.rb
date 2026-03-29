@@ -157,10 +157,6 @@ class Sequencer
     @lookahead_ms = 25.0
   end
 
-  def total_bars=(bars)
-    @total_steps = bars.to_i * 32
-  end
-
   def total_bars
     @total_steps / 32
   end
@@ -325,7 +321,7 @@ class Sequencer
   # --- Pattern Management ---
 
   def create_pattern(name = "New Pattern", steps = 16, id = nil)
-    id ||= "p#{@patterns.length + 1}_#{Time.now.to_i}"
+    id ||= "p#{@patterns.length + 1}_#{(Time.now.to_f * 1000).to_i}"
     # Initialize with velocity hash for each instrument
     events = {
       "Kick" => {}, "Snare" => {}, "HiHat" => {}, "OpenHat" => {}
@@ -337,7 +333,7 @@ class Sequencer
 
   def delete_pattern(id)
     @patterns.reject! { |p| p.id == id }
-    # Also remove references from blocks?
+    # Reset references in rhythm blocks that used the deleted pattern
     @tracks.each do |t|
       next unless t.type == :rhythmic
       t.blocks.each do |b|
@@ -378,22 +374,12 @@ class Sequencer
   end
 
   def export_patterns_json
-    # Clean up events data before exporting to ensure it's valid JSON
     items = @patterns.map do |p|
-      clean_events = {}
-      p.events.each do |inst, data|
-        steps_map = data.is_a?(Hash) ? data : {}
-        if data.is_a?(Array)
-          data.each { |s| steps_map[s] = 0.8 }
-        end
-        clean_events[inst] = steps_map
-      end
-
       {
         id: p.id,
         name: p.name,
         steps: p.steps,
-        events: clean_events
+        events: normalize_events(p.events)
       }
     end
     JSON.generate(items)
@@ -409,26 +395,7 @@ class Sequencer
       id = p_data[:id].to_s
       name = p_data[:name].to_s
       steps = p_data[:steps].to_i
-
-      events = {}
-      p_events = p_data[:events] || {}
-
-      # Iterate over instruments (Kick, Snare, etc.)
-      ["Kick", "Snare", "HiHat", "OpenHat"].each do |inst|
-        inst_events = p_events[inst.to_sym]
-        next unless inst_events
-
-        step_map = {}
-        if inst_events.is_a?(Hash)
-          inst_events.each do |step_key, val|
-            step_map[step_key.to_s.to_i] = val.to_f
-          end
-        elsif inst_events.is_a?(Array)
-          # Legacy data support (Array of step indices)
-          inst_events.each { |s| step_map[s.to_i] = 0.8 }
-        end
-        events[inst] = step_map
-      end
+      events = normalize_events(p_data[:events] || {})
 
       pattern = RhythmPattern.new(id, name, steps, events)
       @patterns << pattern
@@ -535,16 +502,7 @@ class Sequencer
     pattern = get_pattern(pattern_id)
     return "{}" unless pattern
 
-    # Build clean hash for JSON
-    clean_events = {}
-    pattern.events.each do |inst, data|
-      steps_map = data.is_a?(Hash) ? data : {}
-      if data.is_a?(Array)
-        data.each { |s| steps_map[s] = 0.8 }
-      end
-      clean_events[inst] = steps_map
-    end
-    JSON.generate(clean_events)
+    JSON.generate(normalize_events(pattern.events))
   end
 
   def get_track_blocks_json(track_index)
@@ -577,7 +535,7 @@ class Sequencer
     code = <<~JAVASCRIPT
       window.App["#{interval_name}"] = setInterval(() => {
         if (window.App && window.App.vm) {
-          window.App.vm.eval("#{name}.scheduler");
+          window.App.vm.eval("#{@name}.scheduler");
         }
       }, #{@lookahead_ms});
     JAVASCRIPT
@@ -652,6 +610,8 @@ class Sequencer
         next unless pattern
 
         local_step_abs = step_index - block.start_step
+        # Sequencer runs at 1/32 note resolution, but drum patterns use 1/16 note steps,
+        # so each pattern step spans 2 sequencer steps.
         pattern_seq_length = pattern.steps * 2
         local_pos = local_step_abs % pattern_seq_length
 
@@ -679,6 +639,22 @@ class Sequencer
   def get_arpeggiator_status(track_index)
     track = @tracks[track_index]
     (track && track.type == :melodic && track.arpeggiator.enabled) ? true : false
+  end
+
+  # Normalize pattern events data, handling legacy Array format and JSON-parsed keys.
+  # Ensures instrument keys are strings, step keys are integers, and velocities are floats.
+  def normalize_events(raw_events)
+    clean = {}
+    raw_events.each do |inst, data|
+      step_map = {}
+      if data.is_a?(Hash)
+        data.each { |k, v| step_map[k.to_s.to_i] = v.to_f }
+      elsif data.is_a?(Array)
+        data.each { |s| step_map[s.to_i] = 0.8 }
+      end
+      clean[inst.to_s] = step_map
+    end
+    clean
   end
 
   def calculate_freq(note)
@@ -751,18 +727,7 @@ class Sequencer
     # 2. Restore Patterns
     @patterns.clear
     (data[:patterns] || []).each do |p_data|
-      # Reconstruct events hash
-      events = {}
-      (p_data[:events] || {}).each do |inst, steps|
-        step_map = {}
-        if steps.is_a?(Hash)
-          steps.each { |k, v| step_map[k.to_s.to_i] = v.to_f }
-        elsif steps.is_a?(Array)
-          steps.each { |s| step_map[s.to_i] = 0.8 }
-        end
-        events[inst.to_s] = step_map
-      end
-
+      events = normalize_events(p_data[:events] || {})
       pattern = RhythmPattern.new(
         p_data[:id],
         p_data[:name],
