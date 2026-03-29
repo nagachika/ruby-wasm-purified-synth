@@ -521,7 +521,8 @@ class ModularEditor {
       })
       .on("dblclick", function(event, d) {
          event.stopPropagation();
-         editor.showParamEditor(d);
+         const node = editor.nodes.find(n => n.id === d.id);
+         if (node) editor.showParamEditor(node);
       })
       .on("contextmenu", function(event, d) {
         event.preventDefault();
