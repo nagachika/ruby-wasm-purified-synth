@@ -11,6 +11,30 @@
     header { background: #333; padding: 10px 20px; border-bottom: 1px solid #444; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
     h1 { margin: 0; font-size: 1.2rem; color: #fff; }
 
+    /* Hamburger Menu */
+    .hamburger-menu { position: relative; }
+    .hamburger-btn {
+      background: none; border: none; color: #eee; cursor: pointer;
+      padding: 4px; display: flex; align-items: center; justify-content: center;
+      border-radius: 4px; margin-right: 12px; flex-shrink: 0;
+    }
+    .hamburger-btn:hover { background: #444; }
+    .hamburger-dropdown {
+      position: absolute; top: calc(100% + 6px); left: 0;
+      background: #333; border: 1px solid #555; border-radius: 4px;
+      padding: 4px 0; display: none; z-index: 500;
+      min-width: 160px; box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    }
+    .hamburger-dropdown.open { display: block; }
+    .hamburger-dropdown-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 14px; color: #eee; cursor: pointer; font-size: 0.9rem;
+      white-space: nowrap; background: none; border: none;
+      width: 100%; text-align: left; box-sizing: border-box;
+    }
+    .hamburger-dropdown-item:hover { background: #444; }
+    .hamburger-dropdown-item .material-icons { font-size: 18px; color: #aaa; }
+
     .tabs { display: flex; gap: 5px; }
     .tab-btn { padding: 8px 16px; background: #444; border: 1px solid #555; color: #ccc; cursor: pointer; border-radius: 4px; font-weight: bold; }
     .tab-btn.active { background: #007bff; color: white; border-color: #007bff; }
@@ -139,16 +163,24 @@
   </div>
 
   <header>
-    <h1>Ruby/WASM Synth</h1>
-    <div style="display: flex; gap: 10px; margin-right: 20px; align-items: center;">
-      <button id="save-project-btn" title="Save Project" style="padding: 0 10px; background: #28a745; border: none; border-radius: 4px; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; height: 36px; min-width: 44px; margin: 0;">
-        <span class="material-icons">file_download</span>
+    <div class="hamburger-menu">
+      <button class="hamburger-btn" id="hamburger-btn" title="Menu"
+              aria-label="Open menu" aria-expanded="false" aria-haspopup="true">
+        <span class="material-icons">menu</span>
       </button>
-      <label for="load-project-input" title="Load Project" style="padding: 0 10px; background: #17a2b8; border: none; border-radius: 4px; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; height: 36px; min-width: 44px; margin: 0; box-sizing: border-box;">
-        <span class="material-icons">file_upload</span>
-      </label>
-      <input type="file" id="load-project-input" accept=".json" style="display: none;">
+      <div class="hamburger-dropdown" id="hamburger-dropdown" role="menu">
+        <button class="hamburger-dropdown-item" id="save-project-btn" role="menuitem">
+          <span class="material-icons">file_download</span>
+          Save Project
+        </button>
+        <label class="hamburger-dropdown-item" for="load-project-input" role="menuitem">
+          <span class="material-icons">file_upload</span>
+          Load Project
+        </label>
+        <input type="file" id="load-project-input" accept=".json" style="display: none;">
+      </div>
     </div>
+    <h1>Ruby/WASM Synth</h1>
     <div class="tabs">
       <button id="tab-synth" class="tab-btn active">Synthesizer</button>
       <button id="tab-chord" class="tab-btn">Chord</button>
@@ -358,5 +390,22 @@
   </div>
 
   <script type="module" src="src/js/main.js"></script>
+  <script>
+    (function () {
+      const btn = document.getElementById('hamburger-btn');
+      const dropdown = document.getElementById('hamburger-dropdown');
+      function openMenu() { dropdown.classList.add('open'); btn.setAttribute('aria-expanded', 'true'); }
+      function closeMenu() { dropdown.classList.remove('open'); btn.setAttribute('aria-expanded', 'false'); }
+      btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        dropdown.classList.contains('open') ? closeMenu() : openMenu();
+      });
+      dropdown.addEventListener('click', function() { setTimeout(closeMenu, 0); });
+      document.addEventListener('click', function(e) {
+        if (!btn.contains(e.target) && !dropdown.contains(e.target)) closeMenu();
+      });
+      document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeMenu(); });
+    })();
+  </script>
 </body>
 </html>
