@@ -123,7 +123,13 @@ class Voice
   def stop_immediately
     now = @ctx[:currentTime].to_f
     @nodes.values.each { |n| n.stop(now) if n.respond_to?(:stop) }
-    @nodes.values.each { |n| n.disconnect rescue nil }
+    @nodes.values.each do |n|
+      begin
+        n.disconnect
+      rescue => e
+        puts "Warning: disconnect failed: #{e.message}"
+      end
+    end
   end
 
   private

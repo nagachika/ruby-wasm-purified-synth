@@ -183,9 +183,9 @@ export function setupChordView(App) {
     const dim = parseInt(yAxisSel.value);
     const idx = currentChordNotes.findIndex(n => {
         let match = (n.b === x);
-        if (dim === 3) match &= (n.c === y);
-        else if (dim === 4) match &= (n.d === y);
-        else if (dim === 5) match &= (n.e === y);
+        if (dim === 3) match = match && (n.c === y);
+        else if (dim === 4) match = match && (n.d === y);
+        else if (dim === 5) match = match && (n.e === y);
         return match;
     });
 
@@ -242,9 +242,9 @@ export function setupChordView(App) {
           const dim = parseInt(yAxisSel.value);
           const note = currentChordNotes.find(n => {
               let match = (n.b === chordSelectedCell.x);
-              if (dim === 3) match &= (n.c === chordSelectedCell.y);
-              else if (dim === 4) match &= (n.d === chordSelectedCell.y);
-              else if (dim === 5) match &= (n.e === chordSelectedCell.y);
+              if (dim === 3) match = match && (n.c === chordSelectedCell.y);
+              else if (dim === 4) match = match && (n.d === chordSelectedCell.y);
+              else if (dim === 5) match = match && (n.e === chordSelectedCell.y);
               return match;
           });
 

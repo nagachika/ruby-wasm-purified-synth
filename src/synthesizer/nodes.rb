@@ -174,8 +174,9 @@ class CombFilterNode < AudioNodeWrapper
   def param(name)
     case name.to_s
     when "frequency"
-      # Exposing delayTime as "frequency" for modulation is risky (Hz vs Seconds)
-      # But returning it allows connections to succeed, even if physics are weird.
+      # Note: This returns the raw delayTime AudioParam (in seconds), not frequency in Hz.
+      # Modulation sources connected here will control delay time directly.
+      # set_frequency() handles the Hz-to-seconds conversion for static values.
       AudioParamWrapper.new(@delay[:delayTime])
     when "q", "Q", "resonance"
       AudioParamWrapper.new(@feedback[:gain])

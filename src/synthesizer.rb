@@ -75,7 +75,9 @@ class Synthesizer
         data[i] = Math.random() * 2 - 1;
       }
     JAVASCRIPT
-    JS.global[:_tempNoiseBuffer]
+    buffer = JS.global[:_tempNoiseBuffer]
+    JS.eval("delete window._tempNoiseBuffer")
+    buffer
   end
 
   attr_reader :noise_buffer
@@ -84,42 +86,43 @@ class Synthesizer
     @master_gain.gain.value = val.to_f * 0.5
   end
 
-    def freq_to_note(freq)
-      (69 + 12 * Math.log2(freq / 440.0)).round
+  def freq_to_note(freq)
+    (69 + 12 * Math.log2(freq / 440.0)).round
+  end
+
+  def note_on(freq)
+    return if @ctx.typeof == "undefined"
+
+    if @ctx[:state] == "suspended"
+      @ctx.call(:resume)
     end
 
-    def note_on(freq)
-      return if @ctx.typeof == "undefined"
-
-      if @ctx[:state] == "suspended"
-        @ctx.call(:resume)
-      end
-
-      # Stop existing voice for this frequency if any
-      if @active_voices[freq]
-        @active_voices[freq].stop_immediately
-      end
-
-      note_num = freq_to_note(freq)
-      voice = Voice.new(@ctx, note_num, @custom_patch, self)
-      @active_voices[freq] = voice
-      voice.start(@ctx[:currentTime].to_f)
+    # Stop existing voice for this frequency if any
+    if @active_voices[freq]
+      @active_voices[freq].stop_immediately
     end
 
-    def note_off(freq)
-      voice = @active_voices[freq]
-      if voice
-        voice.stop(@ctx[:currentTime].to_f)
-        @active_voices.delete(freq)
-      end
-    end
+    note_num = freq_to_note(freq)
+    voice = Voice.new(@ctx, note_num, @custom_patch, self)
+    @active_voices[freq] = voice
+    voice.start(@ctx[:currentTime].to_f)
+  end
 
-    def schedule_note(freq, start_time, duration, velocity: 0.8)
-      note_num = freq_to_note(freq)
-      voice = Voice.new(@ctx, note_num, @custom_patch, self)
-      voice.start(start_time, velocity: velocity)
-      voice.stop(start_time + duration)
+  def note_off(freq)
+    voice = @active_voices[freq]
+    if voice
+      voice.stop(@ctx[:currentTime].to_f)
+      @active_voices.delete(freq)
     end
+  end
+
+  def schedule_note(freq, start_time, duration, velocity: 0.8)
+    note_num = freq_to_note(freq)
+    voice = Voice.new(@ctx, note_num, @custom_patch, self)
+    voice.start(start_time, velocity: velocity)
+    voice.stop(start_time + duration)
+  end
+
   # --- Preset Management ---
 
   def import_patch(json_str)
