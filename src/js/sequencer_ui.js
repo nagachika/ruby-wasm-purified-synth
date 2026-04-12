@@ -719,6 +719,7 @@ export function setupSequencer(App) {
                 openPatternSelector(drawTrackIndex, start, pid);
             }
         } catch(e){ console.error(e); }
+        ghostBlock.remove();
         ghostBlock = null;
     }
     isDrawing = false;
