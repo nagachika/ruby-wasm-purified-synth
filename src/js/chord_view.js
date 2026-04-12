@@ -215,15 +215,6 @@ export function setupChordView(App) {
     });
   }
 
-  function playPreviewNote(App, noteObj) {
-      try {
-          const freqVal = App.call("$sequencer", "calculate_freq_from_coords", noteObj.a, noteObj.b, noteObj.c, noteObj.d, noteObj.e);
-          const freq = parseFloat(freqVal.toString());
-          const now = App.audioCtx.currentTime;
-          App.call("$previewSynth", "schedule_note", freq, now, 0.3);
-      } catch(e) { console.error(e); }
-  }
-
   // Handle Keyboard for editor
   window.addEventListener("keydown", (e) => {
       const viewChord = document.getElementById("view-chord");
@@ -281,7 +272,16 @@ export function setupChordView(App) {
   renderChordEditor(App);
 }
 
-function renderGenericLattice(container, notes, dim, selectedCell, onToggle) {
+export function playPreviewNote(App, noteObj) {
+    try {
+        const freqVal = App.call("$sequencer", "calculate_freq_from_coords", noteObj.a, noteObj.b, noteObj.c, noteObj.d, noteObj.e);
+        const freq = parseFloat(freqVal.toString());
+        const now = App.audioCtx.currentTime;
+        App.call("$previewSynth", "schedule_note", freq, now, 0.3);
+    } catch(e) { console.error(e); }
+}
+
+export function renderGenericLattice(container, notes, dim, selectedCell, onToggle) {
     container.innerHTML = "";
     // Grid: X: -3 to 3 (7 cols), Y: 2 to -2 (5 rows)
     for (let y = 2; y >= -2; y--) {

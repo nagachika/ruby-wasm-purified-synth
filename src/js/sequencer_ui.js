@@ -1,6 +1,7 @@
 import { CELL_WIDTH, drawTetrisShape } from "./utils.js";
 import { getChords } from "./chord_manager.js";
 import { getPresets } from "./presets.js";
+import { renderGenericLattice, playPreviewNote } from "./chord_view.js";
 
 // Queue for future playhead updates from Ruby
 const playheadQueue = [];
@@ -22,6 +23,17 @@ export function setupSequencer(App) {
   const selectorModal = document.getElementById("chord-selector-modal");
   const selectorClose = document.getElementById("close-chord-selector");
   const selectorList = document.getElementById("selector-list");
+
+  // Inline Chord Editor in Selector Modal
+  const selectorLattice = document.getElementById("selector-lattice-grid");
+  const selectorYAxis = document.getElementById("selector-y-axis");
+  const selectorApplyBtn = document.getElementById("selector-apply-btn");
+  const selectorClearBtn = document.getElementById("selector-clear-btn");
+
+  let editorNotes = [];
+  let editorSelectedCell = { x: 0, y: 0 };
+  let editorTrackIdx = -1;
+  let editorStartStep = -1;
 
   // Pattern Selector Modal (Rhythmic)
   const patternModal = document.getElementById("pattern-selector-modal");
@@ -561,49 +573,142 @@ export function setupSequencer(App) {
       }
   }
 
+  // --- INLINE CHORD EDITOR (in selector modal) ---
+  function renderSelectorLattice() {
+      const dim = parseInt(selectorYAxis.value);
+      renderGenericLattice(selectorLattice, editorNotes, dim, editorSelectedCell, (x, y) => {
+          toggleEditorNote(x, y);
+      });
+  }
+
+  function toggleEditorNote(x, y) {
+      const dim = parseInt(selectorYAxis.value);
+      const idx = editorNotes.findIndex(n => {
+          let match = (n.b === x);
+          if (dim === 3) match = match && (n.c === y);
+          else if (dim === 4) match = match && (n.d === y);
+          else if (dim === 5) match = match && (n.e === y);
+          return match;
+      });
+
+      if (idx >= 0) {
+          editorNotes.splice(idx, 1);
+      } else {
+          const newNote = { a: 0, b: x, c: 0, d: 0, e: 0 };
+          if (dim === 3) newNote.c = y;
+          else if (dim === 4) newNote.d = y;
+          else if (dim === 5) newNote.e = y;
+          editorNotes.push(newNote);
+          playPreviewNote(App, newNote);
+      }
+      editorSelectedCell = { x, y };
+      renderSelectorLattice();
+  }
+
+  selectorYAxis.onchange = () => {
+      const newDim = parseInt(selectorYAxis.value);
+      editorNotes.forEach(note => {
+          let yVal = 0;
+          if (note.c !== 0) { yVal = note.c; note.c = 0; }
+          else if (note.d !== 0) { yVal = note.d; note.d = 0; }
+          else if (note.e !== 0) { yVal = note.e; note.e = 0; }
+          if (newDim === 3) note.c = yVal;
+          else if (newDim === 4) note.d = yVal;
+          else if (newDim === 5) note.e = yVal;
+      });
+      renderSelectorLattice();
+  };
+
+  selectorClearBtn.onclick = () => {
+      editorNotes = [];
+      editorSelectedCell = { x: 0, y: 0 };
+      renderSelectorLattice();
+  };
+
+  selectorApplyBtn.onclick = () => {
+      if (editorNotes.length === 0) return;
+      applyChordToBlock(editorTrackIdx, editorStartStep, "custom", editorNotes);
+      selectorModal.style.display = "none";
+  };
+
   // --- MELODIC CHORD SELECTOR ---
   function openChordSelector(trackIdx, startStep) {
+      editorTrackIdx = trackIdx;
+      editorStartStep = startStep;
+
+      // Load existing block notes into editor (if any)
+      editorNotes = [];
+      editorSelectedCell = { x: 0, y: 0 };
+      try {
+          const notesJson = App.call("$sequencer", "get_block_notes_json", trackIdx, startStep).toString();
+          const parsed = JSON.parse(notesJson);
+          if (parsed && parsed.length > 0) {
+              editorNotes = JSON.parse(JSON.stringify(parsed));
+          }
+      } catch(e) {}
+
+      // Infer dimension from loaded notes
+      let inferredDim = 3;
+      if (editorNotes.some(n => n.e !== 0)) inferredDim = 5;
+      else if (editorNotes.some(n => n.d !== 0)) inferredDim = 4;
+      selectorYAxis.value = inferredDim;
+
+      renderSelectorLattice();
+
+      // Render saved chord list
       selectorList.innerHTML = "";
       const chords = getChords();
       const chordNames = Object.keys(chords);
       if (chordNames.length === 0) {
-          selectorList.innerHTML = "<div style='grid-column: 1/-1; text-align: center; color: #aaa; padding: 20px;'>No chords saved. Create one in the Chord tab.</div>";
-          selectorModal.style.display = "flex";
-          return;
+          selectorList.innerHTML = "<div style='grid-column: 1/-1; text-align: center; color: #aaa; padding: 20px;'>No saved chords. Use the editor above or create chords in the Chord tab.</div>";
+      } else {
+          chordNames.forEach(name => {
+              const entry = chords[name];
+              const isLegacy = Array.isArray(entry);
+              const notes = isLegacy ? entry : entry.notes;
+              const dim = isLegacy ? null : entry.dimension;
+
+              const item = document.createElement("div");
+              item.style.background = "#444";
+              item.style.padding = "5px";
+              item.style.borderRadius = "4px";
+              item.style.cursor = "pointer";
+              item.style.textAlign = "center";
+              item.setAttribute("data-chord", name);
+
+              const cvs = document.createElement("canvas");
+              cvs.width = 80; cvs.height = 80;
+              drawTetrisShape(cvs.getContext("2d"), notes, 80, 80, dim);
+
+              const lbl = document.createElement("div");
+              lbl.textContent = name;
+              lbl.style.marginTop = "5px";
+              lbl.style.fontSize = "0.9rem";
+
+              item.appendChild(cvs);
+              item.appendChild(lbl);
+
+              // Load into editor instead of immediately applying
+              item.onclick = () => {
+                  editorNotes = JSON.parse(JSON.stringify(notes));
+                  editorSelectedCell = { x: 0, y: 0 };
+                  if (dim) {
+                      selectorYAxis.value = dim;
+                  } else {
+                      let inferred = 3;
+                      if (notes.some(n => n.e !== 0)) inferred = 5;
+                      else if (notes.some(n => n.d !== 0)) inferred = 4;
+                      selectorYAxis.value = inferred;
+                  }
+                  renderSelectorLattice();
+                  // Highlight selected chord item
+                  selectorList.querySelectorAll("[data-chord]").forEach(el => el.style.outline = "none");
+                  item.style.outline = "2px solid #28a745";
+              };
+
+              selectorList.appendChild(item);
+          });
       }
-      // Add existing chords
-      chordNames.forEach(name => {
-          const entry = chords[name];
-          const isLegacy = Array.isArray(entry);
-          const notes = isLegacy ? entry : entry.notes;
-          const dim = isLegacy ? null : entry.dimension;
-
-          const item = document.createElement("div");
-          item.style.background = "#444";
-          item.style.padding = "5px";
-          item.style.borderRadius = "4px";
-          item.style.cursor = "pointer";
-          item.style.textAlign = "center";
-
-          const cvs = document.createElement("canvas");
-          cvs.width = 80; cvs.height = 80;
-          drawTetrisShape(cvs.getContext("2d"), notes, 80, 80, dim);
-
-          const lbl = document.createElement("div");
-          lbl.textContent = name;
-          lbl.style.marginTop = "5px";
-          lbl.style.fontSize = "0.9rem";
-
-          item.appendChild(cvs);
-          item.appendChild(lbl);
-
-          item.onclick = () => {
-              applyChordToBlock(trackIdx, startStep, name, notes);
-              selectorModal.style.display = "none";
-          };
-
-          selectorList.appendChild(item);
-      });
       selectorModal.style.display = "flex";
   }
   selectorClose.onclick = () => selectorModal.style.display = "none";
