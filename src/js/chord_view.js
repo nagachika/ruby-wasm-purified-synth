@@ -366,6 +366,7 @@ export function renderGenericLattice(container, notes, dim, selectedCell, onTogg
           // Color Logic: center=white, x-axis=2d, others=current dim
           if (x === 0 && y === 0) {
             cell.style.background = "#fff";
+            cell.style.color = "#000";
           } else if (y === 0) {
             cell.style.background = dimensionColors[2];
           } else {
