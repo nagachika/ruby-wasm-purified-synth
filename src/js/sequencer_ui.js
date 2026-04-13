@@ -578,6 +578,27 @@ export function setupSequencer(App) {
       const dim = parseInt(selectorYAxis.value);
       renderGenericLattice(selectorLattice, editorNotes, dim, editorSelectedCell, (x, y) => {
           toggleEditorNote(x, y);
+      }, (x, y, delta) => {
+          const note = editorNotes.find(n => {
+              let match = (n.b === x);
+              if (dim === 3) match = match && (n.c === y);
+              else if (dim === 4) match = match && (n.d === y);
+              else if (dim === 5) match = match && (n.e === y);
+              return match;
+          });
+          if (note) {
+              note.a += delta;
+              playPreviewNote(App, note);
+          } else {
+              const newNote = { a: delta, b: x, c: 0, d: 0, e: 0 };
+              if (dim === 3) newNote.c = y;
+              else if (dim === 4) newNote.d = y;
+              else if (dim === 5) newNote.e = y;
+              editorNotes.push(newNote);
+              playPreviewNote(App, newNote);
+          }
+          editorSelectedCell = { x, y };
+          renderSelectorLattice();
       });
   }
 

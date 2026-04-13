@@ -212,6 +212,27 @@ export function setupChordView(App) {
     // Generic Lattice Renderer
     renderGenericLattice(editorGrid, currentChordNotes, dim, chordSelectedCell, (x, y) => {
         toggleNote(x, y);
+    }, (x, y, delta) => {
+        const note = currentChordNotes.find(n => {
+            let match = (n.b === x);
+            if (dim === 3) match = match && (n.c === y);
+            else if (dim === 4) match = match && (n.d === y);
+            else if (dim === 5) match = match && (n.e === y);
+            return match;
+        });
+        if (note) {
+            note.a += delta;
+            playPreviewNote(App, note);
+        } else {
+            const newNote = { a: delta, b: x, c: 0, d: 0, e: 0 };
+            if (dim === 3) newNote.c = y;
+            else if (dim === 4) newNote.d = y;
+            else if (dim === 5) newNote.e = y;
+            currentChordNotes.push(newNote);
+            playPreviewNote(App, newNote);
+        }
+        chordSelectedCell = { x, y };
+        renderChordEditor(App);
     });
   }
 
@@ -281,8 +302,35 @@ export function playPreviewNote(App, noteObj) {
     } catch(e) { console.error(e); }
 }
 
-export function renderGenericLattice(container, notes, dim, selectedCell, onToggle) {
+export function renderGenericLattice(container, notes, dim, selectedCell, onToggle, onOctaveChange) {
     container.innerHTML = "";
+
+    // Drag state shared across cells
+    let dragState = null; // { cell, x, y, startY, baseA, hasNote, delta }
+
+    const onMouseMove = (e) => {
+        if (!dragState) return;
+        const delta = Math.round((dragState.startY - e.clientY) / 30);
+        dragState.delta = delta;
+        const displayA = dragState.hasNote ? dragState.baseA + delta : delta;
+        if (displayA > 0) dragState.cell.textContent = `↑${displayA}`;
+        else if (displayA < 0) dragState.cell.textContent = `↓${Math.abs(displayA)}`;
+        else dragState.cell.textContent = dragState.hasNote ? "" : "";
+    };
+
+    const onMouseUp = (e) => {
+        if (!dragState) return;
+        const { x, y, delta } = dragState;
+        dragState = null;
+        window.removeEventListener("mousemove", onMouseMove);
+        window.removeEventListener("mouseup", onMouseUp);
+        if (delta !== 0 && onOctaveChange) {
+            onOctaveChange(x, y, delta);
+        } else {
+            onToggle(x, y);
+        }
+    };
+
     // Grid: X: -3 to 3 (7 cols), Y: 2 to -2 (5 rows)
     for (let y = 2; y >= -2; y--) {
       for (let x = -3; x <= 3; x++) {
@@ -328,7 +376,28 @@ export function renderGenericLattice(container, notes, dim, selectedCell, onTogg
           else if (note.a < 0) cell.textContent = `↓${Math.abs(note.a)}`;
         }
 
-        cell.onclick = () => onToggle(x, y);
+        // Drag for octave change, click for toggle
+        const cellX = x, cellY = y;
+        cell.addEventListener("mousedown", (e) => {
+            e.preventDefault();
+            const cellNote = notes.find(n => {
+                let match = (n.b === cellX);
+                if (dim === 3) match = match && (n.c === cellY);
+                if (dim === 4) match = match && (n.d === cellY);
+                if (dim === 5) match = match && (n.e === cellY);
+                return match;
+            });
+            dragState = {
+                cell, x: cellX, y: cellY,
+                startY: e.clientY,
+                baseA: cellNote ? cellNote.a : 0,
+                hasNote: !!cellNote,
+                delta: 0
+            };
+            window.addEventListener("mousemove", onMouseMove);
+            window.addEventListener("mouseup", onMouseUp);
+        });
+
         container.appendChild(cell);
       }
     }
