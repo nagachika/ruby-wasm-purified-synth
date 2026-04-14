@@ -83,11 +83,14 @@ export function setupSequencer(App) {
     }
   }
 
+  let _lastIsPlayingUI = null;
   function updatePlayBtnUI() {
     if (!playBtn) return;
     try {
       const isPlayingVal = App.call("$sequencer", "is_playing");
       const isPlaying = isPlayingVal && isPlayingVal.toString() === "true";
+      if (isPlaying === _lastIsPlayingUI) return;
+      _lastIsPlayingUI = isPlaying;
       if (isPlaying) {
         playBtn.innerHTML = '<span class="material-icons">stop</span> Stop';
         playBtn.style.background = "#dc3545";
